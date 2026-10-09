@@ -1,0 +1,3 @@
+const {test}=require('node:test'),assert=require('node:assert/strict');const {VadResampler}=require('../signal.js');
+for(const rate of [8000,16000,44100,48000])test('VAD resampling preserves time and packet boundaries '+rate,()=>{const pcm=Float32Array.from({length:rate},(_,i)=>Math.sin(i*.03)),whole=new VadResampler(rate).push(pcm),stream=new VadResampler(rate),parts=[];for(let i=0;i<pcm.length;i+=137)parts.push(...stream.push(pcm.subarray(i,i+137)));assert.equal(whole.length,16000);assert.deepEqual(Float32Array.from(parts),whole);});
+test('VAD resampling preserves amplitude',()=>{const result=new VadResampler(48000).push(new Float32Array(4800).fill(.25));assert.ok([...result].every(x=>x===.25));});

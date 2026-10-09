@@ -1,0 +1,27 @@
+[
+  {
+    "path": "vendor/LICENSE-sherpa-onnx",
+    "bytes": 11358,
+    "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+  },
+  {
+    "path": "vendor/sherpa-onnx-asr.js",
+    "bytes": 54712,
+    "sha256": "fff0b2059f4e203d8d3c9fc4af997d146e724236c081b9f5af1e5df05c5a421b"
+  },
+  {
+    "path": "vendor/sherpa-onnx-vad.js",
+    "bytes": 7784,
+    "sha256": "e6bf4f36dcc8067b3d94d2f6b9ce279f77470d4a9ea758dc7fe2b8e99fb68c41"
+  },
+  {
+    "path": "vendor/sherpa-onnx-wasm-web.js",
+    "bytes": 93039,
+    "sha256": "ef434f0a6868aa4d622797d24d1089c5638a1991f1c491db44931eef5170eb72"
+  },
+  {
+    "path": "vendor/sherpa-onnx-wasm-web.wasm",
+    "bytes": 15162849,
+    "sha256": "1223d484c0e12b2a0f124516f851ef128cb003bbfbe181393734a204fd15f640"
+  }
+]
