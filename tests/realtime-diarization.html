@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="ru">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>LocalSpeech — real-time A/B</title>
+<style>body{font:16px system-ui;max-width:1050px;margin:28px auto;padding:0 18px;color:#e4ecf4;background:#101923}h1{font-size:26px}label{display:inline-block;margin:8px 16px 8px 0}button,input,select{font:inherit;padding:8px;background:#202e3d;color:inherit;border:1px solid #63788c;border-radius:6px}button{cursor:pointer}button:disabled{opacity:.5}small{display:block;color:#a6bacb;line-height:1.5}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#192533;padding:16px;border-radius:8px;font-size:13px}#status{display:block;margin:16px 0;color:#8fdcc0}table{border-collapse:collapse;width:100%;font-size:14px}td,th{border-bottom:1px solid #405063;text-align:left;padding:8px}</style></head>
+<body><h1>Реальное время: распознавание и диаризация</h1>
+<p>Один и тот же PCM подаётся в настоящий мост приложения пакетами по 100 мс. A — только ASR, B — ASR и анализ говорящих. Никакой отправки аудио наружу.</p>
+<small>Два канала воспроизводят один файл независимо: это нагрузочный тест, а не проверка разделения собеседников. Имя и текст расшифровки не попадают в отчёт. Для проверки точности нужны отдельные размеченные записи. Первая загрузка модели учитывается отдельно от обработки.</small>
+<label>Аудиофайл <input id="audio" type="file" accept="audio/*"></label><div id="fixture">Проверяю локальный тестовый файл…</div>
+<label>Язык <select id="language"><option value="mixed">Русский + English</option><option value="ru">Русский</option><option value="en">English</option></select></label>
+<label>Каналы <select id="channels"><option value="1">1</option><option value="2">2</option></select></label>
+<label>Частота PCM <select id="sample-rate"><option value="16000">16 кГц</option><option value="48000">48 кГц · системный звук</option></select></label>
+<label>Длительность каждого прогона, с <input id="duration" type="number" min="10" max="120" value="60" style="width:70px"></label>
+<label>Порядок <select id="sequence"><option value="ABBA">ABBA — баланс прогрева</option><option value="AB">AB — короткое сравнение</option><option value="A">A — только ASR</option><option value="B">B — с диаризацией</option></select></label>
+<p><button id="run">Запустить измерение</button> <button id="stop" disabled>Остановить</button> <button id="download" disabled>Скачать JSON</button></p>
+<output id="status" role="status">Загрузка SDK…</output><div id="progress" role="status"></div><div id="summary"></div><pre id="report">Нет измерений.</pre>
+<script src="/tests/realtime-diarization.js"></script>
+<script src="/sdk/local-speech.js"></script><script src="/sdk/speaker-identity.js"></script><script src="/sdk/speaker-profiles.js"></script><script src="/sdk/speaker-diarization.js"></script><script src="/speakers.js"></script><script src="/bridge.js"></script>
+</body></html>

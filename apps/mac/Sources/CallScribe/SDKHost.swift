@@ -11,6 +11,8 @@ import Combine
     private var nextPacket = 0
     private var waitIDs: [String: UUID] = [:]
     private var watchdog: Timer?
+    private var activeWork: Set<String> = []
+    private var shuttingDown = false
     var onEvent: ((AudioChannel, [String: Any]) -> Void)?
     var onVoiceMessage: (([String: Any]) -> Void)?
     var onFailure: ((String) -> Void)?
@@ -26,6 +28,8 @@ import Combine
         webView.navigationDelegate = self
     }
     func launch() async throws {
+        keepRunning("boot", true)
+        defer { keepRunning("boot", false) }
         guard let resources = Bundle.main.resourceURL else { throw NSError(domain: "CallScribe", code: 1, userInfo: [NSLocalizedDescriptionKey: "Не найдены ресурсы приложения"]) }
         let root = resources.appendingPathComponent("Web")
         guard FileManager.default.fileExists(atPath: root.appendingPathComponent("sdk/local-speech.js").path) else { throw NSError(domain: "CallScribe", code: 2, userInfo: [NSLocalizedDescriptionKey: "Соберите приложение командой apps/mac/build.sh"]) }
@@ -33,6 +37,9 @@ import Combine
         try await wait("boot", timeout: 30) { self.webView.load(URLRequest(url: self.origin!.appendingPathComponent("bridge.html"))) }
     }
     func start(language: String, terms: [String], channels: [AudioChannel], allowLargeModels: Bool = false, speakerEnabled: Bool = false, voiceProfiles: [VoiceProfile] = []) async throws {
+        keepRunning("call", true)
+        var prepared = false
+        defer { if !prepared { keepRunning("call", false) } }
         pending.removeAll()
         let count = Double(max(1, channels.count)), machine = ProcessInfo.processInfo
         let budget = max(1, Double(machine.physicalMemory) / 1073741824 - 2) / count
@@ -40,6 +47,7 @@ import Combine
         let config: [String: Any] = ["speakerEnabled": speakerEnabled, "voiceProfiles": profiles, "language": language, "terms": terms, "cacheOnly": false, "allowLargeModels": allowLargeModels, "channels": channels.map(\.rawValue), "deviceHints": ["memoryGB": budget, "cores": max(1, machine.activeProcessorCount / channels.count), "mobile": false, "saveData": false]]
         let json = String(data: try JSONSerialization.data(withJSONObject: config), encoding: .utf8)!
         try await wait("ready", timeout: 90) { self.run("void CallBridge.prepare(\(json))") }
+        prepared = true
         watchdog?.invalidate()
         watchdog = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in
@@ -61,36 +69,69 @@ import Combine
         }
     }
     func stop() async {
+        keepRunning("stop", true)
+        defer { keepRunning("call", false); keepRunning("stop", false) }
         watchdog?.invalidate(); watchdog = nil
         finish("ready", error: CancellationError())
-        do { try await wait("stopped", timeout: 30) { self.run("void CallBridge.stop()") } }
+        do { try await wait("stopped", timeout: 30, cancellable: false) { self.run("void CallBridge.stop()") } }
         catch { onFailure?("Не удалось завершить SDK: \(error.localizedDescription)") }
         pending.removeAll()
     }
     func enrollVoice(name: String, data: Data? = nil, rate: Double? = nil, segmentKey: String? = nil) async throws {
         let requestID = UUID().uuidString
         let key = "voice-enrolled:" + requestID
+        keepRunning(key, true)
+        defer { keepRunning(key, false) }
         var options: [String: Any] = ["id": requestID, "name": name]
         if let data, let rate { options["encoded"] = data.base64EncodedString(); options["rate"] = rate }
         if let segmentKey { options["segmentKey"] = segmentKey }
         let json = String(data: try JSONSerialization.data(withJSONObject: options), encoding: .utf8)!
-        try await wait(key, timeout: 270) { self.run("void CallBridge.enroll(\(json))") }
+        do {
+            try await wait(key, timeout: 105) { self.run("void CallBridge.enroll(\(json))") }
+        } catch {
+            // Keep WebKit awake until the addressed cancellation has been dispatched.
+            // Cleanup must run even when the enrolling Swift Task was cancelled.
+            if shuttingDown { throw error }
+            let cancelKey = "voice-cancel-dispatch:" + requestID
+            try? await wait(cancelKey, timeout: 5, cancellable: false) {
+                self.webView.evaluateJavaScript("void CallBridge.cancelEnrollment('\(requestID)')") { [weak self] _, dispatchError in
+                    Task { @MainActor in self?.finish(cancelKey, error: dispatchError) }
+                }
+            }
+            throw error
+        }
     }
-    func shutdown() { for key in Array(waits.keys) { finish(key, error: CancellationError()) }; watchdog?.invalidate(); server?.stop(); webView.configuration.userContentController.removeScriptMessageHandler(forName: "speech") }
+    func shutdown() { shuttingDown = true; for key in Array(waits.keys) { finish(key, error: CancellationError()) }; activeWork.removeAll(); webView.configuration.preferences.inactiveSchedulingPolicy = .suspend; watchdog?.invalidate(); server?.stop(); webView.configuration.userContentController.removeScriptMessageHandler(forName: "speech") }
+    private func keepRunning(_ reason: String, _ active: Bool) {
+        if active { activeWork.insert(reason) } else { activeWork.remove(reason) }
+        // Capture is native, so WebKit cannot infer that the hidden SDK view is
+        // doing user-requested audio work. Allow background execution only then.
+        webView.configuration.preferences.inactiveSchedulingPolicy = activeWork.isEmpty ? .suspend : .none
+    }
     private func run(_ script: String) {
         webView.evaluateJavaScript(script) { [weak self] _, error in
             if let error { Task { @MainActor in self?.failed(error.localizedDescription) } }
         }
     }
-    private func wait(_ name: String, timeout: Double, action: () -> Void) async throws {
-        try await withCheckedThrowingContinuation { continuation in
-            finish(name, error: CancellationError()); waits[name] = continuation
-            let ticket = UUID(); waitIDs[name] = ticket
-            action()
-            Task { [weak self] in
-                try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+    private func wait(_ name: String, timeout: Double, cancellable: Bool = true, action: () -> Void) async throws {
+        let ticket = UUID()
+        try await withTaskCancellationHandler {
+            if cancellable { try Task.checkCancellation() }
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                finish(name, error: CancellationError()); waits[name] = continuation
+                waitIDs[name] = ticket
+                action()
+                Task { [weak self] in
+                    try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+                    guard self?.waitIDs[name] == ticket else { return }
+                    self?.finish(name, error: NSError(domain: "CallScribe", code: 4, userInfo: [NSLocalizedDescriptionKey: "Таймаут SDK: \(name)"]))
+                }
+            }
+        } onCancel: { [weak self] in
+            guard cancellable else { return }
+            Task { @MainActor in
                 guard self?.waitIDs[name] == ticket else { return }
-                self?.finish(name, error: NSError(domain: "CallScribe", code: 4, userInfo: [NSLocalizedDescriptionKey: "Таймаут SDK: \(name)"]))
+                self?.finish(name, error: CancellationError())
             }
         }
     }
@@ -111,7 +152,10 @@ import Combine
         case "ready", "stopped": finish(type)
         case "ack": if let id = body["packetId"] as? Int { pending.removeValue(forKey: id) }
         case "event": if let raw = body["channel"] as? String, let channel = AudioChannel(rawValue: raw), let event = body["event"] as? [String: Any] { onEvent?(channel, event) }
-        case "speaker", "speaker-status": onVoiceMessage?(body)
+        case "speaker": onVoiceMessage?(body)
+        case "speaker-status":
+            if let requestID = body["requestId"] as? String, waits["voice-enrolled:" + requestID] == nil { return }
+            onVoiceMessage?(body)
         case "voice-profile", "voice-error":
             guard let requestID = body["requestId"] as? String else { return }
             let key = "voice-enrolled:" + requestID

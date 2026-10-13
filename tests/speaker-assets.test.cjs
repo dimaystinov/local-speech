@@ -19,7 +19,7 @@ function fixture(t) {
     write((source === 'model' ? 'models/speaker-wespeaker/' : 'runtime/') + file, content);
     return { source, file, path: dest, bytes: content.length, sha256: sha(content) };
   }) };
-  for (const name of ['sdk/speaker-identity.js', 'speaker-worker.js', 'sdk/speaker-profiles.js', 'sdk/SPEAKER_THIRD_PARTY_NOTICES.md']) write(name, name);
+  for (const name of ['sdk/speaker-identity.js', 'speaker-worker.js', 'sdk/speaker-profiles.js', 'sdk/speaker-diarization.js', 'sdk/SPEAKER_THIRD_PARTY_NOTICES.md']) write(name, name);
   write('sdk/speaker-assets-manifest.json', JSON.stringify(manifest));
   return { root, write, manifest, options: { projectRoot: root, transformersDir: path.join(root, 'runtime'), manifest } };
 }
@@ -75,4 +75,14 @@ test('speaker builder arguments remain explicit and reject duplicates', () => {
   assert.deepEqual(parseArgs(['--transformers-dir=/tmp/runtime', '--output=/tmp/sdk']), { transformersDir: '/tmp/runtime', outputRoot: '/tmp/sdk' });
   assert.throws(() => parseArgs(['--transformers-dir=']), /Usage/);
   assert.throws(() => parseArgs(['--output=a', '--output=b']), /Usage/);
+});
+test('segmentation assets require a pinned revision and integrity verification',t=>{
+ const {root,write,options,manifest}=fixture(t);
+ const content='segmentation';write('models/segmentation-pyannote/onnx/model_quantized.onnx',content);
+ manifest.files.push({source:'segmentation',file:'onnx/model_quantized.onnx',path:'models/segmentation-pyannote/onnx/model_quantized.onnx',bytes:content.length,sha256:sha(content)});
+ assert.throws(()=>buildSpeakerAssets(options),/segmentation manifest/);
+ manifest.segmentation={revision:'b'.repeat(40)};buildSpeakerAssets(options);
+ assert.equal(fs.readFileSync(path.join(root,'dist/local-speech/models/segmentation-pyannote/onnx/model_quantized.onnx'),'utf8'),content);
+ write('models/segmentation-pyannote/onnx/model_quantized.onnx','corrupt');
+ assert.throws(()=>buildSpeakerAssets(options),/integrity mismatch/);
 });

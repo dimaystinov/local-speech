@@ -32,3 +32,24 @@ file. `node tools/build-speaker-assets.cjs` performs no downloads and fails on
 missing or modified assets. Install the exact Transformers.js package locally
 or supply `--transformers-dir=PATH` to its package directory. Run the add-on
 builder after `node tools/build-sdk.cjs`.
+
+## Speaker segmentation and overlap detection
+
+Optional segmentation uses `onnx-community/pyannote-segmentation-3.0`, revision
+`733a93b6473d019a773298e08cefa686894b1854`, q8 ONNX weights (1,542,308 bytes).
+Source: https://huggingface.co/onnx-community/pyannote-segmentation-3.0/tree/733a93b6473d019a773298e08cefa686894b1854
+Upstream: https://huggingface.co/pyannote/segmentation-3.0
+
+The model is MIT licensed, Copyright (c) 2022 CNRS. Full text appears in
+`licenses/segmentation-pyannote-mit.txt`. The upstream Hugging Face repository
+requires accepting its download conditions; this package uses the independently
+public ONNX Community conversion, without attempting to access gated weights.
+License text was verified from the official sherpa-onnx redistribution:
+https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-segmentation-models/sherpa-onnx-pyannote-segmentation-3-0.tar.bz2
+Archive SHA-256: `24615ee884c897d9d2ba09bb4d30da6bb1b15e685065962db5b02e76e4996488`.
+
+These unchanged converted weights predict silence, one of three local speaker
+slots, or pairwise overlap. Local slots are not persistent identities. Segmentation
+runs only when requested, in the optional speaker worker; it is not part of ASR.
+The model does not separate overlapping voices into isolated audio, and its
+classification confidence is not an identity probability or accuracy guarantee.

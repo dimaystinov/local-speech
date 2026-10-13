@@ -133,16 +133,21 @@
       const samples = decodePCM(encoded, rate);
       entry.rate = rate;
       entry.pending++;
+      root.CallSpeakers?.pressure?.(session.speakers,channel,{busy:entry.busy===true,pending:entry.pending});
       entry.packetIds.add(packetId);
       const job = entry.tail.then(async () => {
         if (!current(session)) return false;
         root.CallSpeakers?.feed(session.speakers,channel,samples,rate);
-        await entry.client.write(samples, rate);
+        entry.busy=true;
+        root.CallSpeakers?.pressure?.(session.speakers,channel,{busy:true,pending:entry.pending});
+        try { await entry.client.write(samples, rate); }
+        finally { entry.busy=false; root.CallSpeakers?.pressure?.(session.speakers,channel,{busy:false,pending:entry.pending}); }
         if (!current(session)) return false;
         send({type: 'ack', channel, packetId});
         return true;
       }).catch(async error => { await fail(session, error); return false; }).finally(() => {
         entry.pending--;
+        root.CallSpeakers?.pressure?.(session.speakers,channel,{busy:entry.busy===true,pending:entry.pending});
         entry.packetIds.delete(packetId);
       });
       entry.tail = job;
@@ -162,9 +167,11 @@
         if (!wasPreparing && current(session)) {
           await Promise.all([...session.entries.values()].map(entry => entry.tail));
           // Keep callbacks live through stop(): it emits the final buffered phrase.
-          for (const entry of session.entries.values()) {
+          for (const [channel, entry] of session.entries) {
             if (!current(session)) break;
-            await entry.client.stop();
+            entry.busy=true;root.CallSpeakers?.pressure?.(session.speakers,channel,{busy:true,pending:entry.pending});
+            try { await entry.client.stop(); }
+            finally { entry.busy=false;root.CallSpeakers?.pressure?.(session.speakers,channel,{busy:false,pending:0}); }
           }
         }
       } catch (error) { await fail(session, error); }
@@ -182,6 +189,6 @@
     return job;
   }
 
-  root.CallBridge = Object.freeze({prepare, audio, stop, enroll: options => root.CallSpeakers?.enroll(options)});
+  root.CallBridge = Object.freeze({prepare, audio, stop, enroll: options => root.CallSpeakers?.enroll(options), cancelEnrollment: id => root.CallSpeakers?.cancelEnrollment(id)});
   send({type: 'boot', sdkVersion: root.LocalSpeech?.version || null});
 })(globalThis);

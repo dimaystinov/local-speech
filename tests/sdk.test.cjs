@@ -43,3 +43,20 @@ test('old multi-packet write cannot feed a restarted session',async()=>{const h=
 test('late rejected direct audio does not recover a newer session',async()=>{const h=harness();await h.client.start({input:'pcm'});let reject;h.engines[0].audio=()=>new Promise((_,r)=>reject=r);const old=h.client.write(new Float32Array(1600),16000);const rejected=assert.rejects(old,/interrupted/);await h.client.stop();await h.client.start({input:'pcm'});reject(Error('late'));await rejected;assert.notEqual(h.engines[1].closed,true);assert.equal(h.client.state,'listening');await h.client.dispose();});
 test('concurrent dispose calls share completion until microphone released',async()=>{const h=harness();await h.client.start();let release;h.captures[0].stop=()=>new Promise(r=>release=r);const a=h.client.dispose(),b=h.client.dispose();assert.equal(a,b);let done=false;b.then(()=>done=true);await new Promise(r=>setImmediate(r));assert.equal(done,false);release();await a;assert.equal(h.client.state,'disposed');assert.ok(h.engines[0].closed);});
 test('repeated single-candidate sessions reset previous candidate exclusion',async()=>{const h=harness({hints:{hardwareConcurrency:2,deviceMemory:4}});for(let i=0;i<3;i++){await h.client.start({input:'pcm'});assert.equal(h.client.diagnostics().backend,'whisper_tiny');await h.client.write(new Float32Array(1600),16000);await h.client.stop();}assert.equal(h.engines.length,3);});
+test('exhausted fallback preserves the original decode failure and bounded diagnostics',async()=>{
+ const h=harness({hints:{hardwareConcurrency:2,deviceMemory:4}});await h.client.start({input:'pcm'});
+ const failure=Object.assign(Error('decode exceeded 8 seconds'),{code:'timeout',processing:{stage:'final',packetId:9},pendingAudio:{queueDepth:1,oldestAgeMs:8100}});
+ h.engines[0].audio=async()=>{throw failure;};await h.client.write(new Float32Array(1600),16000);
+ const event=h.events.find(x=>x.type==='error');assert.equal(event.code,'timeout');assert.match(event.message,/decode exceeded 8 seconds/);assert.match(event.message,/whisper_tiny/);
+ assert.equal(event.processing.stage,'final');assert.equal(event.pendingAudio.oldestAgeMs,8100);assert.equal(h.engines.length,1);assert.equal(h.client.state,'error');await h.client.dispose();
+});
+test('all failed loads report the last concrete cause instead of only resource policy',async()=>{
+ const h=harness({loadHook:async engine=>{throw Error('missing weights for '+engine.model);}});
+ await assert.rejects(h.client.start({input:'pcm'}),/missing weights for whisper_tiny/);assert.equal(h.engines.length,2);await h.client.dispose();
+});
+test('failure while replaying the fallback reports the replay cause',async()=>{
+ const h=harness();await h.client.start({input:'pcm'});const next=h.client.nextBackend.bind(h.client);
+ h.client.nextBackend=async(...args)=>{await next(...args);h.engines.at(-1).audio=async()=>{throw Object.assign(Error('replay decode failed'),{code:'wasm-failure'});};};
+ h.engines[0].failAudio=true;await h.client.write(new Float32Array(1600),16000);
+ const event=h.events.find(x=>x.type==='error');assert.equal(event.code,'wasm-failure');assert.match(event.message,/replay decode failed/);assert.equal(h.engines.length,2);await h.client.dispose();
+});

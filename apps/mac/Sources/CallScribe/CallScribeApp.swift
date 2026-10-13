@@ -78,7 +78,7 @@ struct CallWindow: View {
                         HStack { Text(voice.name).font(.caption); Spacer(); Button("Удалить", systemImage: "trash") { model.removeVoice(voice.id) }.labelStyle(.iconOnly).disabled(model.active || model.enrolling).help("Удалить профиль \(voice.name)") }
                     }
                     Text(model.voiceStatus).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                    Text("Имена — по образцу голоса. Возможны ошибки; неизвестные голоса не получают сохранённое имя.").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    Text("Имена — по образцу голоса. Возможны ошибки. При недостатке данных голос останется неопределённым.").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer()
                 VStack(alignment: .leading, spacing: 12) {
@@ -130,6 +130,12 @@ struct CallWindow: View {
                                 VStack(alignment: .leading, spacing: 7) {
                                     HStack { Text(line.speakerLabel).font(.caption.weight(.semibold)).foregroundStyle(line.channel == .call ? blue : .teal); Text(TranscriptDocument.timestamp(line.seconds)).font(.caption.monospacedDigit()).foregroundStyle(.tertiary) }
                                     Text(line.text).font(.system(size: 18)).lineSpacing(5).textSelection(.enabled)
+                                    if let speaker = line.speaker, (speaker.intervals?.filter { $0.kind != "silence" }.count ?? 0) > 1 {
+                                        DisclosureGroup("Голоса по времени") {
+                                            Text(speaker.timeline(baseSeconds: line.seconds)).font(.caption.monospacedDigit()).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                                            Text("Метки относятся к звуку; отдельные слова между говорящими не распределены.").font(.caption2).foregroundStyle(.secondary)
+                                        }.font(.caption)
+                                    }
                                     if model.voiceSamples.contains(line.id) {
                                         Button("Запомнить голос из этой реплики") { model.rememberVoice(line) }.font(.caption)
                                             .disabled(model.active || model.enrolling || model.voiceName.trimmingCharacters(in: .whitespaces).isEmpty || line.speaker?.kind == "mixed")

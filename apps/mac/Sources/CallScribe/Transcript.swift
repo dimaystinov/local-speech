@@ -30,7 +30,7 @@ struct TranscriptDocument: Codable {
         lines[index].speaker = speaker
     }
     var plainText: String {
-        title + "\n\n" + lines.map { "[" + Self.timestamp($0.seconds) + "] " + $0.speakerLabel + ": " + $0.text }.joined(separator: "\n\n")
+        title + "\n\n" + lines.map { "[" + Self.timestamp($0.seconds) + "] " + $0.speakerLabel + ": " + $0.text + (($0.speaker?.intervals?.count ?? 0) > 1 ? "\nГолоса по времени:\n" + ($0.speaker?.timeline(baseSeconds: $0.seconds) ?? "") : "") }.joined(separator: "\n\n")
     }
     static func timestamp(_ seconds: Double) -> String {
         let s = Int(max(0, seconds)); return String(format: "%02d:%02d", s / 60, s % 60)

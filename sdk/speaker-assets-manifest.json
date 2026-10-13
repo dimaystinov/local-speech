@@ -82,6 +82,41 @@
       "path": "licenses/speaker-jinja-mit.txt",
       "bytes": 1069,
       "sha256": "d6e7b19451c1b3d1d66353bb4b1274138953b3bfd9ae60c56e77b1f548796982"
+    },
+    {
+      "source": "segmentation",
+      "file": "config.json",
+      "path": "models/segmentation-pyannote/config.json",
+      "bytes": 408,
+      "sha256": "5a4c6bb4f49f1b47c9bd398aac78b8cd4a9f30a0ff91b5c2dc68d05e13e160cf"
+    },
+    {
+      "source": "segmentation",
+      "file": "preprocessor_config.json",
+      "path": "models/segmentation-pyannote/preprocessor_config.json",
+      "bytes": 158,
+      "sha256": "dfc7d35a3895f8997eb94521e28b1921c03480a34fa9bcbb6bef1f1934f81480"
+    },
+    {
+      "source": "segmentation",
+      "file": "onnx/model_quantized.onnx",
+      "path": "models/segmentation-pyannote/onnx/model_quantized.onnx",
+      "bytes": 1542308,
+      "sha256": "93a3eb106923c9b76a7d8af07ac337dd24c2d0dcd20f1b6c55f21133e944d658"
+    },
+    {
+      "source": "project",
+      "file": "sdk/licenses/segmentation-pyannote-mit.txt",
+      "path": "licenses/segmentation-pyannote-mit.txt",
+      "bytes": 1061,
+      "sha256": "14d7016ad68e7394d6e6b78d96cc2ae431c905287b89674cfdf021e79e62b8ba"
     }
-  ]
+  ],
+  "segmentation": {
+    "id": "onnx-community/pyannote-segmentation-3.0",
+    "revision": "733a93b6473d019a773298e08cefa686894b1854",
+    "license": "MIT",
+    "dtype": "q8",
+    "sampleRate": 16000
+  }
 }

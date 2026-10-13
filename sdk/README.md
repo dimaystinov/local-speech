@@ -60,6 +60,8 @@ Terms: at most32 strings of80 characters; controls/blank/nonstring terms rejecte
 
 Stop flushes the microphone tail before local finalization. Dispose is terminal. Cancellation and generation guards suppress stale callbacks. Recovery retains up to30 seconds of uncommitted PCM; overflow is explicitly reported. `exportPendingAudio()` returns copies for host-controlled recovery/export, never automatic upload. Timestamps from system recognition are unreliable; recovered text can overlap earlier native results and carries a review flag. No guessed text deduplication deletes repeated words.
 
+If all permitted fallbacks fail, the terminal error retains the last concrete backend failure. Runtime error events include the backend and available decode-stage/queue diagnostics. A missing alternative must not hide a timeout or corrupt-model error behind a generic resource-policy message.
+
 Without a reference `quality.accuracy` stays null; flags are diagnostics, not confidence calibration. Caller-written text should not be replaced automatically. This SDK wraps the primary recognition/recovery path; experimental second-pass WebGPU refinement remains in the research application, not automatically enabled here.
 
 ## Cache and offline scope
@@ -87,4 +89,6 @@ await speaker.dispose();
 </script>
 ```
 
-The worker produces 256-dimensional normalized embeddings locally using WASM. A profile must use the exact `LocalSpeechSpeakers.modelId`; do not silently migrate embeddings across models. The pure `speaker-profiles.js` helper validates vectors, bounds audio rings and conservatively matches profiles/anonymous clusters. Similarity is not a calibrated probability. This extension does not perform speech segmentation or authenticate people. The Mac example implements bounded background segment attribution, optional enrollment and private local persistence; its limitations are documented in `apps/mac/README.md`.
+The worker produces 256-dimensional normalized embeddings locally using WASM. A profile must use the exact `LocalSpeechSpeakers.modelId`; do not silently migrate embeddings across models. The pure `speaker-profiles.js` helper validates vectors, bounds audio rings and conservatively matches profiles/anonymous clusters. Similarity is not a calibrated probability and does not authenticate people.
+
+The optional `speaker.segment(samples, sampleRate)` API lazily loads pinned pyannote segmentation weights and returns local speaker/overlap intervals. Load `speaker-diarization.js` to combine segmentation with clean-speech matching through `LocalSpeechDiarization.analyze`. Segmenter speaker slots are local to each window; saved profiles provide cross-session matching. The Mac example implements bounded background attribution, enrollment and private local persistence. Measured accuracy and release limitations are documented in `docs/diarization-validation.md` and `apps/mac/README.md`.

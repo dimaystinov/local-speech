@@ -8,6 +8,7 @@ const LOCAL_FILES = {
   'sdk/speaker-identity.js': 'speaker-identity.js',
   'speaker-worker.js': 'speaker-worker.js',
   'sdk/speaker-profiles.js': 'speaker-profiles.js',
+  'sdk/speaker-diarization.js': 'speaker-diarization.js',
   'sdk/SPEAKER_THIRD_PARTY_NOTICES.md': 'SPEAKER_THIRD_PARTY_NOTICES.md',
   'sdk/speaker-assets-manifest.json': 'speaker-assets-manifest.json',
 };
@@ -16,9 +17,10 @@ function safePath(value) {
 }
 function validateManifest(manifest) {
   if (manifest?.version !== 1 || !/^[a-f0-9]{40}$/.test(manifest?.model?.revision) || !Array.isArray(manifest.files) || !manifest.files.length) throw Error('Invalid speaker manifest');
+  if (manifest.files.some(entry => entry.source === 'segmentation') && !/^[a-f0-9]{40}$/.test(manifest.segmentation?.revision)) throw Error('Invalid segmentation manifest');
   const seen = new Set();
   for (const entry of manifest.files) {
-    if (!['model', 'transformers', 'project'].includes(entry.source) || !safePath(entry.file) || !safePath(entry.path) || !Number.isSafeInteger(entry.bytes) || entry.bytes <= 0 || !/^[a-f0-9]{64}$/.test(entry.sha256)) throw Error('Invalid speaker asset entry');
+    if (!['model', 'segmentation', 'transformers', 'project'].includes(entry.source) || !safePath(entry.file) || !safePath(entry.path) || !Number.isSafeInteger(entry.bytes) || entry.bytes <= 0 || !/^[a-f0-9]{64}$/.test(entry.sha256)) throw Error('Invalid speaker asset entry');
     if (seen.has(entry.path)) throw Error('Duplicate speaker destination');
     seen.add(entry.path);
   }
@@ -50,7 +52,7 @@ function buildSpeakerAssets({ projectRoot = path.resolve(__dirname, '..'), outpu
   const runtime = path.resolve(transformersDir || path.join(root, 'node_modules/@huggingface/transformers'));
   const metadata = JSON.parse(fs.readFileSync(path.join(runtime, 'package.json')));
   if (metadata.name !== pinned.runtime.package || metadata.version !== pinned.runtime.version) throw Error('Speaker runtime version mismatch: requires ' + pinned.runtime.package + '@' + pinned.runtime.version);
-  const roots = { project: root, model: path.join(root, 'models/speaker-wespeaker'), transformers: runtime };
+  const roots = { project: root, model: path.join(root, 'models/speaker-wespeaker'), segmentation: path.join(root, 'models/segmentation-pyannote'), transformers: runtime };
   const payload = new Map(pinned.files.map(entry => [entry.path, readChecked(roots[entry.source], entry)]));
   for (const [source, destination] of Object.entries(LOCAL_FILES)) payload.set(destination, fs.readFileSync(contained(root, source)));
   // Complete all integrity and destination checks before changing the existing SDK package.
@@ -59,7 +61,7 @@ function buildSpeakerAssets({ projectRoot = path.resolve(__dirname, '..'), outpu
   const replaced = new Set(payload.keys());
   ownership.files = ownership.files.filter(entry => !replaced.has(entry.path)).concat(inventory);
   ownership.totalBytes = ownership.files.reduce((total, entry) => total + entry.bytes, 0);
-  ownership.speaker = { model: pinned.model, runtime: pinned.runtime, bytes: inventory.reduce((total, entry) => total + entry.bytes, 0) };
+  ownership.speaker = { model: pinned.model, segmentation: pinned.segmentation, runtime: pinned.runtime, bytes: inventory.reduce((total, entry) => total + entry.bytes, 0) };
   for (const [destination, bytes] of payload) {
     const target = contained(out, destination);
     fs.mkdirSync(path.dirname(target), { recursive: true });

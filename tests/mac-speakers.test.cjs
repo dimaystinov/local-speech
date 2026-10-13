@@ -12,11 +12,11 @@ const event=(id=1,startMs=0,endMs=3000)=>({type:'final',sessionId:'session-a',se
 const options=extra=>({language:'mixed',terms:[],cacheOnly:true,channels:['call'],speakerEnabled:true,voiceProfiles:[],...extra});
 function fixture(hooks={}){
  const messages=[],embeddings=[],clients=[],engines=[];
- const context={URL,atob,Float32Array,Uint8Array,DataView,setTimeout,clearTimeout,location:{href:'http://127.0.0.1:8766/bridge.html'},
+ const context={URL,atob,Float32Array,Uint8Array,DataView,setTimeout:hooks.fastTimeouts?((fn,ms)=>setTimeout(fn,ms>=1000?30:ms)):setTimeout,clearTimeout,location:{href:'http://127.0.0.1:8766/bridge.html'},
   webkit:{messageHandlers:{speech:{postMessage:m=>messages.push(m)}}},
-  LocalSpeechVoiceProfiles:profiles,
+  LocalSpeechVoiceProfiles:profiles,LocalSpeechDiarization:require('../sdk/speaker-diarization.js'),
   LocalSpeechSpeakers:{modelId:profiles.MODEL_ID,create(){
-   const engine={closed:false,async prepare(){await hooks.prepare?.();},async embed(samples,rate){embeddings.push({samples,rate});return await hooks.embed?.(samples,rate,embeddings.length)??axis();},async dispose(){this.closed=true;await hooks.dispose?.();}};
+   const engine={closed:false,async prepare(){await hooks.prepare?.();},async segment(samples,rate){const durationMs=samples.length*1000/rate;if(samples.every(x=>x===0))return {durationMs,intervals:[{startMs:0,endMs:durationMs,speakers:[],confidence:.99}]};return hooks.segment?.(samples,rate)??{durationMs,intervals:[{startMs:0,endMs:durationMs,speakers:[0],confidence:.95}]};},async embed(samples,rate){embeddings.push({samples,rate});return await hooks.embed?.(samples,rate,embeddings.length)??axis();},async dispose(){this.closed=true;await hooks.dispose?.();}};
    engines.push(engine);return engine;
   }},
   LocalSpeech:{create(){const c={writes:0,on(_,callback){this.callback=callback;return ()=>{};},async prepare(){},async start(){},async write(samples,rate){this.writes++;await hooks.write?.(this,samples,rate);},async stop(){await hooks.stop?.(this);},async dispose(){}};clients.push(c);return c;}}
@@ -47,22 +47,22 @@ test('speaker preparation and inference never block ASR ACK or overwrite raw tra
 test('sample windows follow event times independently for microphone and call',async()=>{
  const f=fixture(),s=f.speakers.start({enabled:true});feed(f,s,2,.25);feed(f,s,3,.5);feed(f,s,3,-.5,'microphone');
  f.speakers.final(s,'call',event(1,2000,5000));f.speakers.final(s,'microphone',event(2));await f.speakers.finish(s);
- assert.equal(f.embeddings.length,2);assert.equal(f.embeddings[0].samples.length,24000);assert.equal(f.embeddings[0].samples[0],.5);assert.equal(f.embeddings[1].samples[0],-.5);
+ assert.equal(f.embeddings.length,2);assert.equal(f.embeddings[0].samples.length,23040);assert.equal(f.embeddings[0].samples[0],.5);assert.equal(f.embeddings[1].samples[0],-.5);
 });
 test('short or expired windows are uncertain without guessing an enrolled name',async()=>{
  const f=fixture(),s=f.speakers.start({enabled:true,profiles:[profile()]});feed(f,s,41);
  f.speakers.final(s,'call',event(1,0,3000));f.speakers.final(s,'call',event(2,40000,41000));await f.speakers.finish(s);
- assert.equal(f.embeddings.length,0);assert.ok(annotations(f).every(a=>a.kind==='uncertain'&&!a.speakerId&&!a.canEnroll));
+ assert.equal(f.embeddings.length,0);assert.ok(annotations(f).filter(a=>a.kind!=='pending').every(a=>a.kind==='uncertain'&&!a.speakerId&&!a.canEnroll));
 });
 test('different known speakers in a segment are mixed without assigning a single name',async()=>{
- const f=fixture({embed:(_,__,i)=>axis(i-1)}),s=f.speakers.start({enabled:true,profiles:[profile(),profile('person-b','Мария',axis(1))]});feed(f,s,8);
+ const f=fixture({embed:(_,__,i)=>axis(i-1),segment:()=>({durationMs:8000,intervals:[{startMs:0,endMs:4000,speakers:[0],confidence:.95},{startMs:4000,endMs:8000,speakers:[1],confidence:.95}]})}),s=f.speakers.start({enabled:true,profiles:[profile(),profile('person-b','Мария',axis(1))]});feed(f,s,8);
  f.speakers.final(s,'call',event(1,0,8000));await f.speakers.finish(s);const result=annotations(f).at(-1);
- assert.equal(result.kind,'mixed');assert.equal(result.label,'Несколько голосов');assert.equal(result.speakerId,undefined);assert.equal(result.intervals.length,2);
+ assert.equal(result.kind,'mixed');assert.equal(result.label,'Несколько говорящих');assert.equal(result.speakerId,undefined);assert.equal(result.intervals.length,2);
  assert.equal(result.intervals[0].label,'Алексей');assert.equal(result.intervals[1].label,'Мария');
 });
 test('ambiguous saved profiles stay uncertain and unknown voice stays anonymous',async()=>{
  const f=fixture(),s=f.speakers.start({enabled:true,profiles:[profile(),profile('person-b','Мария')]});feed(f,s);
- f.speakers.final(s,'call',event());await f.speakers.finish(s);assert.equal(annotations(f).at(-1).kind,'uncertain');assert.equal(annotations(f).at(-1).speakerId,undefined);
+ f.speakers.final(s,'call',event());await f.speakers.finish(s);assert.equal(annotations(f).at(-1).kind,'uncertain');assert.equal(annotations(f).at(-1).speakerId,null);
  const unknown=fixture({embed:()=>axis(2)}),u=unknown.speakers.start({enabled:true,profiles:[profile()]});feed(unknown,u);unknown.speakers.final(u,'call',event());await unknown.speakers.finish(u);
  assert.equal(annotations(unknown).at(-1).kind,'anonymous');assert.equal(annotations(unknown).at(-1).label,'Голос 1');
 });
@@ -76,11 +76,11 @@ test('analysis queue and cached enrollment samples stay bounded under overload',
 test('enrollment from a clean file emits validated embedding but never raw audio',async()=>{
  const f=fixture();await f.speakers.enroll({name:'Алексей',id:'person-a',encoded:encode(pcm(4)),rate:8000});
  const message=f.messages.find(m=>m.type==='voice-profile');assert.ok(message);assert.equal(message.requestId,'person-a');assert.equal(message.profile.name,'Алексей');assert.equal(message.profile.modelId,profiles.MODEL_ID);
- assert.equal(message.profile.embedding.length,256);assert.equal(f.embeddings.length,3);assert.deepEqual(f.embeddings.map(e=>e.samples.length),[16000,16000,32000]);
+ assert.equal(message.profile.embedding.length,256);assert.equal(f.embeddings.length,3);assert.deepEqual(f.embeddings.map(e=>e.samples.length),[15520,15520,31040]);
  assert.deepEqual(Object.keys(message.profile).sort(),['embedding','id','modelId','name']);
 });
 test('enrollment uses recent final sample only after stopped',async()=>{
- const f=fixture(),s=f.speakers.start({enabled:true});feed(f,s,3,.25);f.speakers.final(s,'call',event());
+ const f=fixture(),s=f.speakers.start({enabled:true});feed(f,s,4,.25);f.speakers.final(s,'call',event(1,0,4000));
  await f.speakers.enroll({name:'Алексей',id:'person-a',segmentKey:'call:session-a:1'});assert.equal(f.messages.at(-1).type,'voice-error');
  await f.speakers.finish(s);assert.equal(s.rings.size,0);await f.speakers.enroll({name:'Алексей',id:'person-a',segmentKey:'call:session-a:1'});
  assert.equal(f.messages.at(-1).type,'voice-profile');assert.equal(f.embeddings.at(-1).samples[0],.25);
@@ -103,8 +103,88 @@ test('failed preparation or invalid PCM disables only speaker analysis',async()=
  const bad=fixture(),s=bad.speakers.start({enabled:true});bad.speakers.feed(s,'call',new Float32Array([NaN]),8000);assert.equal(s.enabled,false);await bad.speakers.finish(s);
 });
 
-test('inconsistent anonymous windows do not assert multiple people',async()=>{
- const f=fixture({embed:(_,__,i)=>axis(i-1)}),s=f.speakers.start({enabled:true});feed(f,s,8);
+test('one local voice uses pooled clean speech rather than creating window identities',async()=>{
+ const f=fixture(),s=f.speakers.start({enabled:true});feed(f,s,8);
  f.speakers.final(s,'call',event(1,0,8000));await f.speakers.finish(s);
- const result=annotations(f).at(-1);assert.equal(result.kind,'uncertain');assert.equal(result.speakerId,undefined);
+ const result=annotations(f).at(-1);assert.equal(result.kind,'anonymous');assert.equal(result.speakerId,'voice1');assert.equal(f.embeddings.length,2);
+});
+
+test('stop with speaker scheduling has no failure and flushes both channels',async()=>{
+ const f=fixture();await f.bridge.prepare(options({channels:['call','microphone']}));
+ await f.bridge.stop();assert.equal(f.messages.some(x=>x.type==='failure'),false);assert.equal(f.messages.at(-1).type,'stopped');
+});
+test('ASR busy signal delays speaker work without blocking audio ACK',async()=>{
+ const f=fixture(),s=f.speakers.start({enabled:true});feed(f,s,4);
+ f.speakers.pressure(s,'call',{busy:true,pending:30});f.speakers.final(s,'call',event(1,0,4000));await tick();
+ assert.equal(f.embeddings.length,0);f.speakers.pressure(s,'call',{busy:false,pending:0});await f.speakers.finish(s);
+ assert.equal(annotations(f).at(-1).kind,'anonymous');
+});
+
+test('speaker hard deadline terminates stuck inference without an ASR failure',async()=>{
+ const blocked=gate(),f=fixture({fastTimeouts:true,embed:()=>blocked.promise}),s=f.speakers.start({enabled:true});feed(f,s,3);
+ f.speakers.final(s,'call',event());await new Promise(resolve=>setTimeout(resolve,60));
+ assert.equal(s.enabled,false);assert.equal(f.engines[0].closed,true);assert.equal(annotations(f).at(-1).kind,'uncertain');
+ assert.equal(f.messages.some(x=>x.type==='failure'),false);blocked.resolve(axis());await f.speakers.finish(s);
+});
+test('disabled speaker worker keeps emitting explicit unknown metadata for later text',async()=>{
+ const f=fixture(),s=f.speakers.start({enabled:true});s.enabled=false;
+ f.speakers.final(s,'call',event(99));assert.equal(annotations(f).at(-1).kind,'uncertain');assert.equal(annotations(f).at(-1).segmentId,99);
+ await f.speakers.finish(s);
+});
+test('stop cancels a pending warmup even before the first phrase',async()=>{
+ const blocked=gate(),f=fixture({fastTimeouts:true,prepare:()=>blocked.promise}),s=f.speakers.start({enabled:true});
+ const one=f.speakers.finish(s),two=f.speakers.finish(s);assert.equal(one,two);await one;
+ assert.equal(s.closed,true);assert.equal(f.engines[0].closed,true);blocked.resolve();await tick();assert.equal(f.embeddings.length,0);
+});
+
+test('queued speaker labels expire from arrival, and late inference cannot replace them',async()=>{
+ const blocked=gate(),f=fixture({fastTimeouts:true,embed:()=>blocked.promise}),s=f.speakers.start({enabled:true});feed(f,s,3);
+ for(let i=0;i<4;i++)f.speakers.final(s,'call',event(i));
+ await new Promise(resolve=>setTimeout(resolve,80));
+ const results=annotations(f).filter(x=>x.kind!=='pending');assert.equal(results.length,4);assert.ok(results.every(x=>x.kind==='uncertain'));
+ blocked.resolve(axis());await f.speakers.finish(s);assert.equal(annotations(f).filter(x=>x.kind!=='pending').length,4);assert.equal(f.embeddings.length,1);
+});
+
+test('addressed enrollment cancellation terminates stuck preparation and permits a fresh retry',async()=>{
+ const blocked=gate();let preparationCount=0;
+ const f=fixture({prepare:()=>++preparationCount===1?blocked.promise:undefined});
+ const first=f.bridge.enroll({name:'Первый',id:'cancelled-prepare',encoded:encode(pcm(4)),rate:8000});await tick();
+ assert.equal(f.engines.length,1);assert.equal(f.bridge.cancelEnrollment('cancelled-prepare'),true);await first;
+ assert.equal(f.engines[0].closed,true);assert.equal(f.messages.filter(x=>x.type==='voice-error'&&x.requestId==='cancelled-prepare').length,1);
+ await f.bridge.enroll({name:'Второй',id:'retry-prepare',encoded:encode(pcm(4)),rate:8000});
+ assert.equal(f.engines.length,2);assert.equal(f.messages.filter(x=>x.type==='voice-profile').length,1);
+ assert.equal(f.messages.find(x=>x.type==='voice-profile').requestId,'retry-prepare');
+ const messageCount=f.messages.length;blocked.resolve();await tick();
+ assert.equal(f.messages.length,messageCount,'late preparation must not emit a profile or progress');
+});
+
+test('cancelled embedding cannot publish a stale profile or affect another enrollment',async()=>{
+ const blocked=gate(),f=fixture({embed:(_,__,n)=>n===1?blocked.promise:axis()});
+ const first=f.bridge.enroll({name:'Старый',id:'stale-embedding',encoded:encode(pcm(4)),rate:8000});await tick();
+ assert.equal(f.embeddings.length,1);assert.equal(f.bridge.cancelEnrollment('stale-embedding'),true);await first;
+ await f.bridge.enroll({name:'Новый',id:'fresh-embedding',encoded:encode(pcm(4)),rate:8000});
+ const messageCount=f.messages.length;blocked.resolve(axis());await tick();
+ assert.equal(f.messages.length,messageCount);assert.deepEqual(f.messages.filter(x=>x.type==='voice-profile').map(x=>x.requestId),['fresh-embedding']);
+ assert.ok(f.messages.filter(x=>x.type==='speaker-status').every(x=>typeof x.requestId==='string'));
+});
+
+test('wrong cancellation ID and concurrent enrollment never abort the active request',async()=>{
+ const blocked=gate(),f=fixture({prepare:()=>blocked.promise});
+ const first=f.bridge.enroll({name:'Первый',id:'active-enrollment',encoded:encode(pcm(4)),rate:8000});await tick();
+ for(const id of [undefined,null,'','another-request',42])assert.equal(f.bridge.cancelEnrollment(id),false);
+ await f.bridge.enroll({name:'Повтор',id:'active-enrollment',encoded:encode(pcm(4)),rate:8000});
+ assert.equal(f.messages.filter(x=>x.type==='voice-error').length,0,'same ID must not fail the original native wait');
+ await f.bridge.enroll({name:'Второй',id:'parallel-enrollment',encoded:encode(pcm(4)),rate:8000});
+ assert.equal(f.messages.find(x=>x.type==='voice-error').requestId,'parallel-enrollment');
+ assert.equal(f.engines.length,1);assert.equal(f.engines[0].closed,false);
+ blocked.resolve();await first;assert.equal(f.messages.find(x=>x.type==='voice-profile').requestId,'active-enrollment');
+});
+
+test('whole enrollment deadline cancels preparation and emits exactly one addressed error',async()=>{
+ const blocked=gate(),f=fixture({fastTimeouts:true,prepare:()=>blocked.promise});
+ await f.bridge.enroll({name:'Таймаут',id:'deadline-enrollment',encoded:encode(pcm(4)),rate:8000});
+ assert.equal(f.engines[0].closed,true);
+ const errors=f.messages.filter(x=>x.type==='voice-error');assert.equal(errors.length,1);assert.equal(errors[0].requestId,'deadline-enrollment');assert.match(errors[0].message,/Превышено время/);
+ const messageCount=f.messages.length;blocked.resolve();await tick();assert.equal(f.messages.length,messageCount);
+ assert.equal(f.messages.some(x=>x.type==='voice-profile'),false);
 });

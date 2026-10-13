@@ -25,7 +25,7 @@ import UniformTypeIdentifiers
     @Published var speakerEnabled = true
     @Published var voiceName = ""
     @Published var voices: [VoiceProfile] = []
-    @Published var voiceStatus = "Сохраните чистый образец: 3–15 секунд речи одного человека."
+    @Published var voiceStatus = "Сохраните чистый образец: 4–15 секунд чистой речи одного человека."
     @Published var enrolling = false
     @Published var voiceSamples = Set<String>()
     @Published var timings: [AudioChannel: String] = [:]
@@ -58,6 +58,7 @@ import UniformTypeIdentifiers
         guard !active, !enrolling, ready else { return }
         generation += 1; let current = generation
         voiceSamples = []
+        voiceStatus = speakerEnabled ? "Голоса определяются локально по сохранённым образцам." : "Определение голосов выключено."
         state = "preparing"; status = "Подготовка моделей SDK…"; error = nil
         partials = [:]; backends = [:]; timings = [:]; sessionStarted = Date(); sessionOffset = document.durationSeconds ?? document.lines.last?.seconds ?? 0
         let channels: [AudioChannel] = microphone ? [.microphone, .call] : [.call]
@@ -139,6 +140,7 @@ import UniformTypeIdentifiers
         guard !active, !enrolling, ready else { return }
         generation += 1; let current = generation
         voiceSamples = []
+        voiceStatus = speakerEnabled ? "Голоса определяются локально по сохранённым образцам." : "Определение голосов выключено."
         save(); partials = [:]; backends = [:]; timings = [:]
         state = "preparing"; status = "Проверка файла через SDK…"; error = nil; document = TranscriptDocument(); sessionStarted = Date(); sessionOffset = 0
         do {
@@ -165,8 +167,12 @@ import UniformTypeIdentifiers
             guard let channel = message["channel"] as? String, let session = message["sessionId"] as? String, let segment = message["segmentId"] as? Int,
                   let label = message["label"] as? String, let kind = message["kind"] as? String else { return }
             let id = "\(channel):\(session):\(segment)"
-            document.attribute(id: id, speaker: VoiceAttribution(label: label, kind: kind, speakerId: message["speakerId"] as? String)); save()
-            if message["canEnroll"] as? Bool == true { voiceSamples.insert(id) }
+            var intervals: [VoiceInterval]?
+            if let raw = message["intervals"] as? [[String: Any]], raw.count <= 2000,
+               let data = try? JSONSerialization.data(withJSONObject: raw),
+               let decoded = try? JSONDecoder().decode([VoiceInterval].self, from: data), decoded.allSatisfy(\.valid) { intervals = decoded }
+            document.attribute(id: id, speaker: VoiceAttribution(label: label, kind: kind, speakerId: message["speakerId"] as? String, intervals: intervals)); save()
+            if message["canEnroll"] as? Bool == true { voiceSamples.insert(id) } else { voiceSamples.remove(id) }
         case "speaker-status", "voice-error": voiceStatus = message["message"] as? String ?? "Голос не определён"
         case "voice-profile":
             do {
@@ -202,8 +208,8 @@ import UniformTypeIdentifiers
             defer { enrolling = false }
             do {
                 let file = try AVAudioFile(forReading: url), rate = file.processingFormat.sampleRate
-                guard (8000...96000).contains(rate), Double(file.length) / rate >= 3, Double(file.length) / rate <= 15 else {
-                    throw NSError(domain: "CallScribe", code: 8, userInfo: [NSLocalizedDescriptionKey: "Выберите от 3 до 15 секунд речи одного человека, частота 8–96 кГц."])
+                guard (8000...96000).contains(rate), Double(file.length) / rate >= 4, Double(file.length) / rate <= 15 else {
+                    throw NSError(domain: "CallScribe", code: 8, userInfo: [NSLocalizedDescriptionKey: "Выберите от 4 до 15 секунд чистой речи одного человека, частота 8–96 кГц."])
                 }
                 let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: AVAudioFrameCount(file.length))!
                 try file.read(into: buffer)

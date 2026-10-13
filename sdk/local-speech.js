@@ -30,7 +30,7 @@
       const job=(async()=>{try{await this.nextBackend(epoch,'failure');if(epoch!==this.epoch)throw Error('Preparation cancelled');this.setState('ready');return this.diagnostics();}catch(error){if(epoch===this.epoch){this.closeBackend();this.setState('error');this.emit('error',{code:'prepare-failed',message:error.message});}throw error;}})();
       this.preparing=job;return job;
     }
-    async nextBackend(epoch,reason){
+    async nextBackend(epoch,reason,lastFailure){
       let candidate;
       while(epoch===this.epoch&&(candidate=selectRecognitionFallback(this.plan,{attempted:this.attempted,reason,current:this.candidate}))){
         this.attempted.add(candidate.key);if(this.input==='pcm'&&candidate.engine==='system')continue;
@@ -47,7 +47,13 @@
             if(!current()){adapter.close();throw Error('Preparation cancelled');}
           }
           this.emit('backend',{backend:candidate.key,localOnly:true,contextCapability:candidate.context,context:this.loadStats.context||{status:'not-reported',count:0},load:this.loadStats});return;
-        }catch(error){if(epoch!==this.epoch)throw error;this.closeBackend();this.emit('warning',{code:'backend-unavailable',backend:candidate.key,message:error.message});}
+        }catch(error){if(epoch!==this.epoch)throw error;lastFailure=error;this.closeBackend();this.emit('warning',{code:'backend-unavailable',backend:candidate.key,message:error.message});}
+      }
+      if(lastFailure){
+        const failure=Error(`Local backend ${this.candidate?.key||'unknown'} failed: ${lastFailure.message}. No eligible local fallback remains.`);
+        failure.code=lastFailure.code||'backend-failed';failure.cause=lastFailure;
+        failure.processing=lastFailure.processing;failure.pendingAudio=lastFailure.pendingAudio;
+        throw failure;
       }
       throw Error('No usable local speech backend for this language and resource policy');
     }
@@ -111,7 +117,7 @@
       const job=(async()=>{try{
         const started=Date.now();
         while(epoch===this.epoch&&this.state==='recovering'){
-          await this.nextBackend(epoch,reason);if(epoch!==this.epoch||this.state!=='recovering')return;
+          await this.nextBackend(epoch,reason,error);if(epoch!==this.epoch||this.state!=='recovering')return;
           let cursor=this.buffer.snapshot()[0]?.startMs??this.buffer.endMs;this.beginEngine(cursor);
           try{
             while(epoch===this.epoch&&this.state==='recovering'){
@@ -119,12 +125,12 @@
               for(const p of batch){if(epoch!==this.epoch||this.state!=='recovering')return;if(Date.now()-started>90000)throw Error('Recovery timeout');await this.engine.audio(p.samples,p.rate,this.sessionId);cursor=p.endMs;}
             }
             if(epoch===this.epoch&&this.state==='recovering'){this.speechSinceTextMs=0;this.setState('listening');this.emit('recovered',{previous,backend:this.candidate.key,lostMs:this.buffer.lostMs});}return;
-          }catch(nextError){if(epoch!==this.epoch)return;this.closeBackend();reason=nextError.code||'failure';}
+          }catch(nextError){if(epoch!==this.epoch)return;this.closeBackend();error=nextError;reason=nextError.code||'failure';}
         }
       }catch(failure){if(epoch===this.epoch)await this.fail(failure);}})();
       this.recovery=job;job.finally(()=>{if(this.recovery===job)this.recovery=null;}).catch(()=>{});return job;
     }
-    async fail(error){if(this.state==='disposed')return;++this.epoch;++this.startEpoch;this.closeBackend();this.setState('error');this.emit('error',{code:error.code||'recognition-failed',message:error.message,sessionId:this.sessionId,recoverableAudioMs:this.buffer.endMs-this.buffer.committedMs});const capture=this.capture;this.capture=null;await capture?.stop();}
+    async fail(error){if(this.state==='disposed')return;++this.epoch;++this.startEpoch;this.closeBackend();this.setState('error');this.emit('error',{code:error.code||'recognition-failed',message:error.message,sessionId:this.sessionId,backend:this.candidate?.key,processing:error.processing,pendingAudio:error.pendingAudio,recoverableAudioMs:this.buffer.endMs-this.buffer.committedMs});const capture=this.capture;this.capture=null;await capture?.stop();}
     closeBackend(){++this.backendEpoch;this.engine?.close();this.engine=null;this.system?.dispose();this.system=null;}
     stop(){
       if(this.stopTask)return this.stopTask;if(this.state==='disposed'||this.state==='idle')return Promise.resolve(this.diagnostics());

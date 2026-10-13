@@ -39,4 +39,19 @@ final class VoiceProfileTests: XCTestCase {
         XCTAssertEqual(archive.latest()?.lines.first?.text, "Фраза")
     }
 
+    func testSpeakerIntervalsPersistAndExportWithoutChangingWords() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let archive = TranscriptArchive(directory: dir)
+        var doc = TranscriptDocument()
+        doc.append(channel: .call, session: "s", segment: 1, seconds: 20, text: "Исходная фраза без распределения слов")
+        let intervals = [VoiceInterval(startMs: 0, endMs: 2100, kind: "known", label: "Анна", speakerId: "a"), VoiceInterval(startMs: 2100, endMs: 3000, kind: "overlap", label: "Говорят одновременно")]
+        doc.attribute(id: "call:s:1", speaker: VoiceAttribution(label: "Говорят одновременно", kind: "overlap", speakerId: nil, intervals: intervals))
+        try archive.save(doc)
+        XCTAssertEqual(archive.latest()?.lines.first?.speaker?.intervals, intervals)
+        XCTAssertTrue(doc.plainText.contains("00:20.0–00:22.1"))
+        XCTAssertTrue(doc.plainText.contains("Исходная фраза без распределения слов"))
+        XCTAssertFalse(VoiceInterval(startMs: 0, endMs: .infinity, kind: "known", label: "Анна").valid)
+    }
+
 }

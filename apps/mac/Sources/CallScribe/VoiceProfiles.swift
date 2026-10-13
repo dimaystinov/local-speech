@@ -12,10 +12,28 @@ struct VoiceProfile: Codable, Identifiable {
         embedding.allSatisfy(\.isFinite) && abs(embedding.reduce(0) { $0 + $1 * $1 } - 1) < 0.02
     }
 }
+struct VoiceInterval: Codable, Equatable {
+    let startMs: Double
+    let endMs: Double
+    let kind: String
+    let label: String
+    var speakerId: String?
+    var valid: Bool { startMs.isFinite && endMs.isFinite && startMs >= 0 && endMs > startMs && endMs <= 15001 && label.count <= 200 }
+}
 struct VoiceAttribution: Codable, Equatable {
     let label: String
     let kind: String
     let speakerId: String?
+    var intervals: [VoiceInterval]? = nil
+    func timeline(baseSeconds: Double) -> String {
+        (intervals ?? []).filter { $0.kind != "silence" }.map { interval in
+            func time(_ ms: Double) -> String {
+                let seconds = max(0, baseSeconds + ms / 1000)
+                return String(format: "%02d:%04.1f", Int(seconds) / 60, seconds.truncatingRemainder(dividingBy: 60))
+            }
+            return "\(time(interval.startMs))–\(time(interval.endMs))  \(interval.label)"
+        }.joined(separator: "\n")
+    }
 }
 final class VoiceProfileStore {
     let file: URL

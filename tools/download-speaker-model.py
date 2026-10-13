@@ -17,12 +17,12 @@ def safe_relative(value):
 
 def download(root):
     manifest = json.loads((root / 'sdk/speaker-assets-manifest.json').read_text())
-    model = manifest['model']
-    base = root / 'models/speaker-wespeaker'
-    base.mkdir(parents=True, exist_ok=True)
     for entry in manifest['files']:
-        if entry['source'] != 'model':
+        if entry['source'] not in ('model', 'segmentation'):
             continue
+        model = manifest[entry['source']]
+        base = root / ('models/speaker-wespeaker' if entry['source'] == 'model' else 'models/segmentation-pyannote')
+        base.mkdir(parents=True, exist_ok=True)
         relative = safe_relative(entry['file'])
         target = base / relative
         target.parent.mkdir(parents=True, exist_ok=True)

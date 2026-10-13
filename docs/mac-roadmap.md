@@ -4,11 +4,13 @@
 
 macOS26 application captures system/application audio and microphone into the existing LocalSpeech SDK. Mixed/English mode offers tiny/base selection and six-second offline windows. Russian streaming mode emits interim text while speaking. File/live smoke tests and deterministic suites are separate validation gates.
 
-## Speaker identity (implemented baseline; validation continues)
+## Speaker identity (implemented; production gate remains open)
 
 Implemented: optional local WeSpeaker embeddings, persistent named profiles, bounded background attribution and enrollment from files/recent phrases. App relaunch and same-voice/new-text matching were exercised in WKWebView. Unknown-voice rejection was exercised separately. This is a smoke test, not calibrated identity accuracy.
 
-Remaining: a dedicated turn/overlap segmenter, identity-labeled real-call corpus, threshold calibration across microphones/codecs/languages, and long-call performance measurement. Approximately four-second embedding windows alone cannot guarantee correct diarization.
+Implemented since the baseline: a 1.54 MB local turn/overlap segmenter, clean-speech pooling, temporal consistency checks, interval metadata, five-second bounded scheduling, a 474-case acoustic benchmark, and an AMI cross-meeting benchmark. See [measured results and release gates](diarization-validation.md).
+
+Remaining: calibrated speaker recognition across microphones/codecs/languages, better overlap recall, independent held-out natural calls, and long-call performance measurement. The measured real-meeting recall is insufficient for a production identity claim. A causal ten-second context experiment improves coverage but also increases named overlapping speech; do not enable it without resolving that regression.
 
 - A separate speaker embedding model, with verified model identity, local persistent profiles and explicit unknown rejection.
 - Enrollment from a clean voice example; a human supplies the name. A voice does not reveal a person's real-world name by itself.
