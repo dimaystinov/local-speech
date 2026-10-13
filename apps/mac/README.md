@@ -1,0 +1,58 @@
+# LocalSpeech Calls — macOS integration test app
+
+Native continuous call transcription, using **this repository's actual LocalSpeech SDK**. ScreenCaptureKit captures audio; a bundled WKWebView runs the same JavaScript SDK, WASM runtime and verified model weights as the browser product. Apple Speech, remote ASR and LLM cleanup are not substituted.
+
+## Build and run
+
+Requires macOS 26+, Apple Silicon, Xcode Command Line Tools with the macOS 26 SDK, Node.js 20+, and downloaded model assets. From the repository root:
+
+```sh
+python3 tools/download-models.py
+python3 tools/download-speaker-model.py
+npm install --prefix .speaker-deps --no-package-lock @huggingface/transformers@3.8.1
+bash apps/mac/build.sh --transformers-dir="$PWD/.speaker-deps/node_modules/@huggingface/transformers"
+swift test --package-path apps/mac
+```
+
+Open `apps/mac/dist/LocalSpeech Calls.app` in Finder. This development build is locally ad-hoc signed; it is not a notarized distribution release. Keep a stable app path when granting macOS permissions. Rebuilding an ad-hoc-signed binary changes its code identity: macOS may retain an enabled permission for the previous hash but reject the new build. Remove only LocalSpeech Calls from Screen & System Audio Recording, add the current app file again, and relaunch. A release needs a stable Developer ID signature and notarization; this build does not weaken code-signing requirements.
+
+1. Choose **Весь звук Mac**, or refresh the application list and select the calling app/browser.
+2. Enable **Мой микрофон** to include yourself. Headphones avoid feeding the other side's voice into both channels.
+3. Choose language and priority. Press **Начать созвон** once; phrases are transcribed continuously, including across pauses. Stop flushes the final buffered phrase.
+4. Copy or export TXT. Final text is automatically saved locally and the latest transcript is restored at launch.
+
+ScreenCaptureKit needs macOS screen/system-audio permission; microphone capture also needs microphone permission. No screen images are registered, read or saved. A denied permission is reported explicitly. **Проверить файл** sends a selected local WAV/MP3/M4A through the same SDK and context configuration without microphone/system-audio permission. It runs with producer backpressure, so it is not a substitute for a real-time capture soak test.
+
+## Speed, language and resources
+
+- **Скорость** is the default: multilingual Whisper tiny for mixed RU/EN and English; streaming Russian Zipformer INT8 for RU.
+- **Точность · медленнее** permits Whisper base only when per-channel RAM/CPU hints meet SDK thresholds; otherwise tiny. The priority is a model-selection preference, not a guarantee of better accuracy on every phrase.
+- Resource hints come from the native host, with 2 GB reserved for the OS and remaining RAM/cores divided between active channels. Browser clients still use browser-reported hints.
+- Offline model windows are capped at 6 seconds, or finalized earlier by a pause. Actual text latency includes inference and any queued audio. Shorter windows trade context for latency and can cut a word at a boundary.
+- The UI reports measured finalization time and segment duration; those are not an accuracy score or full end-to-end latency.
+- RU Zipformer does not become a multilingual model through hotwords. The current Whisper adapter does not apply context terms.
+- SDK fallback remains local and bounded. The native bridge buffers at most 150 × 100 ms packets per channel. A sustained overload stops explicitly; it must not silently drop audio or grow memory indefinitely.
+
+The labels **Я** and **Собеседники** indicate microphone and captured-app channels. All remote participants share one channel. System audio from unrelated applications is included when capturing the whole Mac.
+
+## Local voice profiles
+
+Enable **Определять собеседников**. Enter a name and choose **Добавить голос из файла** with 3–15 seconds of clean speech from one person. Alternatively, after stopping a call, use **Запомнить голос из этой реплики** on a recent suitable phrase. Up to eight recent excerpts remain in memory for enrollment. Restarting clears those excerpts, but saved profiles persist. Use the trash button next to a profile to remove it.
+
+A separate optional WeSpeaker ResNet34 q8 worker compares normalized voice embeddings against saved profiles. Model weights are 6.7 MB; the complete optional runtime/assets add about 29.3 MB. Pinned revision, hashes and attribution are in `sdk/speaker-assets-manifest.json` and `sdk/SPEAKER_THIRD_PARTY_NOTICES.md`. Models are bundled once; audio stays local. Profiles store a name and embedding in `~/Library/Application Support/LocalSpeech Calls/voices.json` with private file permissions. They do not store the recording.
+
+The name is supplied by you. Unknown voices receive session labels such as **Голос 1**; ambiguous or missing evidence stays **Голос не определён**. A match is not a verified real-world identity or an authentication mechanism. Thresholds have not been calibrated on a representative call corpus.
+
+Speaker work runs in a separate bounded queue after text becomes available. Failure or overload leaves the transcript intact. Current attribution compares approximately four-second windows within ASR segments. It flags windows matching different saved profiles as **Несколько голосов**, and inconsistent anonymous windows as uncertain, but cannot reliably detect short turns or simultaneous speakers inside one window. This is preliminary segment attribution, not complete overlap-aware diarization. A dedicated speaker-change/overlap segmenter and real-call validation remain required.
+
+## Local storage and packaging
+
+The app embeds SDK assets and selected weights once. A loopback-only static server serves the bundle at an ephemeral port. No external network access is required for model loading after build. WKWebView uses a nonpersistent store to avoid duplicate disk caches for changing loopback origins; the durable model copy is the app bundle. Size/SHA-256 validation is retained.
+
+Transcripts live under `~/Library/Application Support/LocalSpeech Calls/Sessions/` as atomic JSON files, with private directory/file permissions. Raw captured audio is not written to disk. Starting a new call preserves previous JSON files, although the current UI restores only the latest session. Renaming is saved on finalization/quit. Transcript content is never included in this repository.
+
+## Validation boundary
+
+Deterministic tests cover bridge isolation, queue bounds, malformed PCM, cancellation, stop/final flushing, loopback HTTP containment, archive roundtrips, transcript ordering and audio packetization. Actual model runs, end-to-end capture, permission handling and long-call performance must be tested separately on target hardware.
+
+This is a working integration test application, not a claim of error-free transcription, ChatGPT accuracy parity, validated individual-speaker identity, or certification across Zoom/Telegram/Meet versions. iPhone testing remains a separate planned deliverable.

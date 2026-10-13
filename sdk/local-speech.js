@@ -10,9 +10,10 @@
       this.assetBaseURL=new URL(base,root.location?.href).href;
       if(!this.assetBaseURL.endsWith('/'))throw Error('assetBaseURL must end with /');
       if(root.location&&new URL(this.assetBaseURL).origin!==root.location.origin)throw Error('Serve speech assets on the application origin');
-      this.options={language:'ru',allowLargeModels:true,cacheOnly:false,terms:[],pauseSeconds:.7,...options};
+      this.options={language:'ru',allowLargeModels:true,cacheOnly:false,terms:[],pauseSeconds:.7,maxSegmentSeconds:12,...options};
       if(!Number.isFinite(this.options.pauseSeconds)||this.options.pauseSeconds<.3||this.options.pauseSeconds>2)throw Error('pauseSeconds must be 0.3..2');
-      this.hints=readDeviceHints();this.plan=selectRecognitionPlan(this.hints,this.options);
+      if(!Number.isFinite(this.options.maxSegmentSeconds)||this.options.maxSegmentSeconds<3||this.options.maxSegmentSeconds>20)throw Error('maxSegmentSeconds must be 3..20');
+      this.hints=options.deviceHints===undefined?readDeviceHints():{...options.deviceHints};this.plan=selectRecognitionPlan(this.hints,this.options);
       this.state='idle';this.listeners=new Map();this.epoch=0;this.startEpoch=0;this.backendEpoch=0;
       this.buffer=new AudioReplayBuffer(30);this.attempted=new Set();this.finalized=new Set();this.segmentBase=0;this.nativeOverlapMs=0;
     }
@@ -68,7 +69,7 @@
         }catch(error){if(current())await this.fail(error);throw error;}
       })();this.startTask=job;job.finally(()=>{if(this.startTask===job)this.startTask=null;}).catch(()=>{});return job;
     }
-    beginEngine(offsetMs){this.engine.begin({sessionId:this.sessionId,segmentBase:this.segmentBase,offsetMs,pauseSeconds:this.options.pauseSeconds,threshold:.006});}
+    beginEngine(offsetMs){this.engine.begin({sessionId:this.sessionId,segmentBase:this.segmentBase,offsetMs,pauseSeconds:this.options.pauseSeconds,maxSegmentSeconds:this.options.maxSegmentSeconds,threshold:.006});}
     write(samples,sampleRate){if(this.input!=='pcm')return Promise.reject(Error('write requires start({input:"pcm"})'));return this.accept(samples,sampleRate);}
     async accept(samples,rate){
       const acceptingEpoch=this.epoch;

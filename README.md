@@ -32,6 +32,10 @@ await speech.start(); // invoke from a user action
 
 Load `/assets/speech/local-speech.js` first. The host supplies the UI functions. See [SDK API](sdk/README.md), [browser example](examples/embedded.html), [server bot architecture](docs/server-bot.md), and [validation limits](docs/validation.md).
 
+## macOS call transcription
+
+The [native Mac test application](apps/mac/README.md) captures call audio and microphone into this SDK and displays continuous text. It includes a local file test, channel labels, saved transcripts and speed/quality selection. Requires macOS 26+. Build with `bash apps/mac/build.sh` after downloading the models.
+
 ## Models and boundaries
 
 - Fixed RU/EN: system recognition is preferred only after an explicit on-device availability probe.

@@ -2,7 +2,7 @@ importScripts('model-catalog.js','vendor/sherpa-onnx-wasm-web.js','vendor/sherpa
 let contextInfo={status:'not-requested',count:0};
 const PREVIEW_BUDGET_MS=1000;
 let lastDecode=null,previewDisabled=false,previewCount=0;
-let vad,resampler,vadRate,pauseSeconds=.7,moduleInstance,recognizer,spec,session,stream,pre=[],chunks=[],voiced=false,quiet=0,elapsed=0,startTime=0,segment=0,lastPartial='',lastPartialAt=0,threshold=.006,voicedMs=0,clipped=0,totalSamples=0;
+let vad,resampler,vadRate,pauseSeconds=.7,maxSegmentSeconds=12,moduleInstance,recognizer,spec,session,stream,pre=[],chunks=[],voiced=false,quiet=0,elapsed=0,startTime=0,segment=0,lastPartial='',lastPartialAt=0,threshold=.006,voicedMs=0,clipped=0,totalSamples=0;
 const send=data=>self.postMessage(data);
 function release(){stream?.free();stream=null;chunks=[];voiced=false;quiet=0;lastPartial='';voicedMs=0;clipped=0;totalSamples=0;previewCount=0;}
 function decodeOffline(target,audio,rate,stage,request){
@@ -76,6 +76,10 @@ self.onmessage=async({data:d})=>{
       }finally{offlineStream.free();}
     }else if(d.action==='begin'){
       if(!recognizer)throw Error('Модель не загружена');
+      const requestedWindow=d.maxSegmentSeconds===undefined?12:d.maxSegmentSeconds;
+      if(!Number.isFinite(requestedWindow)||requestedWindow<3||requestedWindow>20)throw Error('maxSegmentSeconds must be 3..20');
+      // Streaming models keep their existing segmentation; this controls offline latency.
+      maxSegmentSeconds=spec.online?12:requestedWindow;
       release();pre=[];vad?.reset();resampler=null;vadRate=null;pauseSeconds=Math.max(.3,Math.min(2,Number(d.pauseSeconds)||.7));session=d.sessionId;segment=d.segmentBase||0;elapsed=(d.offsetMs||0)/1000;lastPartialAt=elapsed;threshold=d.threshold||.006;
       send({type:'begun',sessionId:session});
     }else if(d.action==='audio'){
@@ -95,7 +99,7 @@ self.onmessage=async({data:d})=>{
         feed(samples,rate);quiet=!speech?quiet+dt:0;
         if(spec.online&&elapsed-lastPartialAt>=.3){const text=(recognizer.getResult(stream).text||'').trim();if(text!==lastPartial){lastPartial=text;send({type:'partial',sessionId:session,segmentId:segment,text});}lastPartialAt=elapsed;}
         if(quiet>=pauseSeconds)finalize('pause',rate,d);
-        else if(elapsed-startTime>=12)finalize('window-limit',rate,d);
+        else if(elapsed-startTime>=maxSegmentSeconds)finalize('window-limit',rate,d);
         else if(spec.preview&&(d.queueDepth||0)<=5&&elapsed-startTime>=4&&voicedMs>=1000&&previewWithinBudget(chunks.reduce((n,c)=>n+c.length,0)/rate*1000)){
           previewCount++;const preview=recognizer.createStream();try{const a=new Float32Array(chunks.reduce((n,c)=>n+c.length,0));let at=0;for(const c of chunks){a.set(c,at);at+=c.length;}decodeOffline(preview,a,rate,'preview',d);const text=(recognizer.getResult(preview).text||'').trim();if(text!==lastPartial){lastPartial=text;send({type:'partial',sessionId:session,segmentId:segment,text});}}finally{preview.free();}lastPartialAt=elapsed;
         }

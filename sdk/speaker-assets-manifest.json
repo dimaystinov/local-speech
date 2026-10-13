@@ -1,0 +1,87 @@
+{
+  "version": 1,
+  "model": {
+    "id": "onnx-community/wespeaker-voxceleb-resnet34-LM",
+    "revision": "6a61a1833ff2583aabeba044f5c8221f00b67ceb",
+    "license": "CC-BY-4.0",
+    "dtype": "q8",
+    "sampleRate": 16000
+  },
+  "runtime": {
+    "package": "@huggingface/transformers",
+    "version": "3.8.1",
+    "onnxruntime": "1.22.0-dev.20250409-89f8206ba4"
+  },
+  "files": [
+    {
+      "source": "model",
+      "file": "config.json",
+      "path": "models/speaker-wespeaker/config.json",
+      "bytes": 38,
+      "sha256": "4a65a1544d2085d7819632f130583d83f6815f49ef6c8ba6c8eb460bd4085041"
+    },
+    {
+      "source": "model",
+      "file": "preprocessor_config.json",
+      "path": "models/speaker-wespeaker/preprocessor_config.json",
+      "bytes": 371,
+      "sha256": "a81bbded0530b1bf5c3d395d2c5c7c266686e348be5989171290ace960f24ec2"
+    },
+    {
+      "source": "model",
+      "file": "onnx/model_quantized.onnx",
+      "path": "models/speaker-wespeaker/onnx/model_quantized.onnx",
+      "bytes": 6685134,
+      "sha256": "f73f647730ae440ae411c2241290f42ff5b2106dd3176c897fe6fbb1950d5393"
+    },
+    {
+      "source": "transformers",
+      "file": "dist/transformers.min.js",
+      "path": "vendor/speaker/transformers.min.js",
+      "bytes": 888173,
+      "sha256": "aa5002b70e789798da263f5f99c62bd3e8fcd0c119258a493c40c180648365fa"
+    },
+    {
+      "source": "transformers",
+      "file": "dist/ort-wasm-simd-threaded.jsep.mjs",
+      "path": "vendor/speaker/ort-wasm-simd-threaded.jsep.mjs",
+      "bytes": 44484,
+      "sha256": "08fb86ec433c78bfb032c5d84a68b8e8e5a8d81268fa39e24314179a5767a5b9"
+    },
+    {
+      "source": "transformers",
+      "file": "dist/ort-wasm-simd-threaded.jsep.wasm",
+      "path": "vendor/speaker/ort-wasm-simd-threaded.jsep.wasm",
+      "bytes": 21596019,
+      "sha256": "c46655e8a94afc45338d4cb2b840475f88e5012d524509916e505079c00bfa39"
+    },
+    {
+      "source": "project",
+      "file": "sdk/licenses/speaker-cc-by-4.0.txt",
+      "path": "licenses/speaker-cc-by-4.0.txt",
+      "bytes": 18524,
+      "sha256": "8ae9438818c26e4873b91d8c6ad620526c011e27e125677f13031eda903f007c"
+    },
+    {
+      "source": "project",
+      "file": "sdk/licenses/speaker-transformers-apache-2.0.txt",
+      "path": "licenses/speaker-transformers-apache-2.0.txt",
+      "bytes": 11358,
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    {
+      "source": "project",
+      "file": "sdk/licenses/onnxruntime.txt",
+      "path": "licenses/onnxruntime.txt",
+      "bytes": 1073,
+      "sha256": "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c"
+    },
+    {
+      "source": "project",
+      "file": "sdk/licenses/speaker-jinja-mit.txt",
+      "path": "licenses/speaker-jinja-mit.txt",
+      "bytes": 1069,
+      "sha256": "d6e7b19451c1b3d1d66353bb4b1274138953b3bfd9ae60c56e77b1f548796982"
+    }
+  ]
+}

@@ -16,3 +16,6 @@ __pycache__/
 *.log
 *.part
 validation/
+.build/
+
+.speaker-deps/

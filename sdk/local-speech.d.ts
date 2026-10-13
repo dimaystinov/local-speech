@@ -1,5 +1,5 @@
 export type SpeechLanguage = 'ru' | 'ru-RU' | 'en' | 'en-US' | 'en-GB' | 'mixed' | 'auto';
-export interface SpeechOptions { assetBaseURL?: string; language?: SpeechLanguage; allowLargeModels?: boolean; cacheOnly?: boolean; terms?: string[]; pauseSeconds?: number; }
+export interface SpeechOptions { assetBaseURL?: string; language?: SpeechLanguage; allowLargeModels?: boolean; cacheOnly?: boolean; terms?: string[]; pauseSeconds?: number; maxSegmentSeconds?: number; deviceHints?: {cores?:number|null;memoryGB?:number|null;mobile?:boolean;saveData?:boolean}; }
 export interface SpeechEvent { type: string; schemaVersion: 1; sessionId?: string; segmentId?: number; text?: string; rawText?: string; turnComplete?: false; backend?: string; state?: string; message?: string; code?: string; quality?: {accuracy: null; status: string; flags: string[]}; [key: string]: unknown; }
 export interface SpeechClient {
  readonly state: string;

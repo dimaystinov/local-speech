@@ -19,7 +19,8 @@ const speech = LocalSpeech.create({
   terms: ['Docker', 'Kubernetes', 'майндмэп'],
   allowLargeModels: true,
   cacheOnly: false,
-  pauseSeconds: 0.7
+  pauseSeconds: 0.7,
+  maxSegmentSeconds: 12 // offline window cap; 3..20 seconds
 });
 speech.on('partial', event => showPreview(event.text));
 speech.on('final', event => saveSegment(event.sessionId, event.segmentId, event.rawText));
@@ -43,11 +44,15 @@ System local-only is probed first for a fixed RU or EN locale. Missing API/langu
 
 On confirmed desktop >=8GB and >=4 logical cores, multilingual base is tried first, then tiny. Unknown/mobile/limited devices use tiny. RU uses Zipformer small first; larger RU alternatives are permitted only for confirmed resources and only if their files are actually supplied. Runtime queue overflow switches only to a lower resource rank; retries are bounded to distinct candidates. Save Data forces cache-only weights. `allowLargeModels:false` disables larger alternatives; multilingual tiny is still ~104MB, not a zero-download path.
 
+`deviceHints:{memoryGB,cores,mobile,saveData}` optionally overrides browser hints for a native embedding. Supply a conservative per-client resource budget; values do not measure inference speed or authorize remote processing.
+
 These are conservative launch heuristics, not measured phone certification. ResourceRank orders allowed fallback routes, not quality. Exact quality is never inferred from RAM, model size or API confidence.
 
 Terms: at most32 strings of80 characters; controls/blank/nonstring terms rejected. They are hints, not reference transcripts. System/Zipformer capability is conditional; inspect actual `context` / `load.context` status. Current Whisper adapter does not apply these hints. Use mixed for English speech/terms that must be recognized as English; RU Zipformer cannot gain English-language coverage from a dictionary. No LLM text cleanup is performed.
 
 ## Lifecycle, audio and events
+
+`maxSegmentSeconds` bounds offline recognition windows (default12, range3..20 seconds). Shorter windows reduce buffering latency but may reduce context and increase inference frequency; they do not guarantee real-time speed. Streaming RU segmentation is unchanged.
 
 `prepare()` optional; `start()` also prepares. `start({input:'pcm'})` permits externally captured normalized Float32 PCM via `await write(samples, rate)`. Use <=1 second packets, 8–96kHz, fixed rate per session; SDK splits into100ms packets and preserves caller buffers. Await write for bounded producer backpressure. Direct PCM input is suitable for test files or your own capture adapter, not a Node/native ASR backend.
 
@@ -62,3 +67,24 @@ Without a reference `quality.accuracy` stays null; flags are diagnostics, not co
 Model files are SHA/size verified and cached. Manifest is cached under the configured asset URL, independently of a service worker. cacheOnly forbids new weight downloads. The host must separately cache the SDK, worker, WASM, worklet and shell for a completely offline installed application. Browser storage can be evicted. We do not claim a successful cache-only model repeat proves full app operation with networking disabled.
 
 The public export includes deterministic adapter, policy and packaging tests. Recorded-audio fixtures and private benchmark evidence are excluded. Main release gates remain independent human recordings, real-time soak, physical phones and paired paid-ASR comparison. See ../docs/validation.md.
+
+
+## Optional speaker embeddings and profiles
+
+`tools/download-speaker-model.py` downloads the pinned, hash-verified WeSpeaker q8 weights. Install `@huggingface/transformers@3.8.1` and run `node tools/build-speaker-assets.cjs --transformers-dir=/path/to/@huggingface/transformers` **after** the ordinary SDK build. Serve the generated files under the same origin. See `SPEAKER_THIRD_PARTY_NOTICES.md` for licenses. This add-on is not loaded by ordinary ASR clients.
+
+```html
+<script src="/local-speech/speaker-identity.js"></script>
+<script src="/local-speech/speaker-profiles.js"></script>
+<script>
+const speaker = LocalSpeechSpeakers.create({assetBaseURL:'/local-speech/'});
+await speaker.prepare();
+// Float32 normalized mono PCM, 8–96 kHz, 1–15 seconds; silence is rejected.
+const embedding = await speaker.embed(samples, sampleRate);
+// LocalSpeechVoiceProfiles.Session matches validated profiles and labels unknowns.
+// The host owns enrollment, storage, UI, capture and segment timing.
+await speaker.dispose();
+</script>
+```
+
+The worker produces 256-dimensional normalized embeddings locally using WASM. A profile must use the exact `LocalSpeechSpeakers.modelId`; do not silently migrate embeddings across models. The pure `speaker-profiles.js` helper validates vectors, bounds audio rings and conservatively matches profiles/anonymous clusters. Similarity is not a calibrated probability. This extension does not perform speech segmentation or authenticate people. The Mac example implements bounded background segment attribution, optional enrollment and private local persistence; its limitations are documented in `apps/mac/README.md`.

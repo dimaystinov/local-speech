@@ -9,6 +9,22 @@ function harness({hints={hardwareConcurrency:8,deviceMemory:8},systemAvailable=f
  for(const file of ['device-policy.js','resilience.js','recognition-policy.js','sdk/local-speech.js'])vm.runInContext(fs.readFileSync(path.join(root,file),'utf8'),ctx,{filename:file});
  const client=ctx.LocalSpeech.create({assetBaseURL:'https://host/assets/speech/',language:'mixed'});client.on('*',e=>events.push(e));return {ctx,client,engines,events,captures};
 }
+test('native host resource budget is explicit, copied and still conservatively normalized',async()=>{
+ const h=harness({hints:{}}),deviceHints={cores:5,memoryGB:8,mobile:false,saveData:false};
+ const client=h.ctx.LocalSpeech.create({assetBaseURL:'https://host/assets/',language:'mixed',deviceHints});
+ deviceHints.memoryGB=1;await client.start({input:'pcm'});assert.equal(client.diagnostics().backend,'whisper');await client.dispose();
+ const unknown=h.ctx.LocalSpeech.create({assetBaseURL:'https://host/assets/',language:'mixed',deviceHints:{cores:NaN,memoryGB:Infinity}});
+ await unknown.start({input:'pcm'});assert.equal(unknown.diagnostics().backend,'whisper_tiny');await unknown.dispose();
+});
+test('segment window validates options and reaches initial and fallback engines',async()=>{
+ const h=harness();
+ for(const maxSegmentSeconds of [2.99,20.01,NaN,Infinity,'6',null])assert.throws(()=>h.ctx.LocalSpeech.create({assetBaseURL:'https://host/assets/',maxSegmentSeconds}),/maxSegmentSeconds/);
+ await h.client.start({input:'pcm'});assert.equal(h.engines[0].session.maxSegmentSeconds,12);await h.client.dispose();
+ const custom=h.ctx.LocalSpeech.create({assetBaseURL:'https://host/assets/',language:'mixed',maxSegmentSeconds:6});
+ await custom.start({input:'pcm'});assert.equal(h.engines[1].session.maxSegmentSeconds,6);h.engines[1].failAudio=true;
+ await custom.write(new Float32Array(1600),16000);assert.equal(h.engines[2].session.maxSegmentSeconds,6);await custom.dispose();
+ for(const maxSegmentSeconds of [3,20]){const client=h.ctx.LocalSpeech.create({assetBaseURL:'https://host/assets/',maxSegmentSeconds});await client.dispose();}
+});
 test('embedding resolves base and mixed never probes system or RU-only engines',async()=>{const h=harness();await h.client.start({input:'pcm'});assert.equal(h.client.diagnostics().backend,'whisper');assert.equal(h.engines[0].options.assetBaseURL,'https://host/assets/speech/');assert.equal(h.engines[0].optionsLoaded.language,'auto');const pcm=new Float32Array(1600).fill(.1);await h.client.write(pcm,16000);assert.equal(pcm.length,1600);await h.client.stop();const final=h.events.find(x=>x.type==='final');assert.equal(final.rawText,'не удаляй Docker');assert.equal(final.turnComplete,false);assert.equal(final.quality.accuracy,null);assert.equal(h.client.state,'idle');});
 test('overload downgrades base to tiny and replays original PCM',async()=>{const h=harness();await h.client.start({input:'pcm'});h.engines[0].failAudio=true;await h.client.write(new Float32Array(1600).fill(.25),16000);assert.equal(h.engines[1].model,'whisper_tiny');assert.equal(h.engines[1].packets.length,1);assert.equal(h.engines[1].packets[0].pcm[0],.25);assert.equal(h.client.state,'listening');assert.ok(h.engines[0].closed);await h.client.stop();});
 test('stale old worker final cannot duplicate a recovered result',async()=>{const h=harness();await h.client.start({input:'pcm'});const old=h.engines[0];old.failAudio=true;await h.client.write(new Float32Array(1600),16000);old.emit({type:'final',sessionId:h.client.sessionId,segmentId:99,text:'stale'});await h.client.stop();assert.equal(h.events.filter(x=>x.type==='final').length,1);});
