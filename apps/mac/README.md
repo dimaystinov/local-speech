@@ -62,3 +62,11 @@ Transcripts live under `~/Library/Application Support/LocalSpeech Calls/Sessions
 Deterministic tests cover bridge isolation, queue bounds, malformed PCM, cancellation, stop/final flushing, loopback HTTP containment, archive roundtrips, transcript ordering and audio packetization. Actual model runs, end-to-end capture, permission handling and long-call performance must be tested separately on target hardware.
 
 This is a working integration test application, not a claim of error-free transcription, ChatGPT accuracy parity, validated individual-speaker identity, or certification across Zoom/Telegram/Meet versions. iPhone testing remains a separate planned deliverable.
+
+## Optional native Russian refinement
+
+A build can bundle a pinned sherpa-onnx C runtime and Whisper small INT8 as a second pass. Build with `LOCALSPEECH_SHERPA_DIR` pointing to the sherpa-onnx 1.13.8 wheel package directory and `LOCALSPEECH_MODELS_ROOT` pointing to verified model folders. `tools/build-native-refiner.py` checks runtime/header and model SHA256 before compilation. No Python runtime or network service is required by the installed application.
+
+The primary SDK still produces text and owns capture segmentation. On Macs with at least 12 GiB RAM, sufficiently long Russian-only Whisper base results may be refined after the primary PCM queue drains. English/mixed-script text, changed explicit digits/negations, language drift and large deletions are excluded. One utility-priority helper runs at a time; overload, missing assets, failed decoding or the five-second deadline keep the original. No unbounded refinement queue is created. This is a limited quality route, not a guarantee of no errors on unseen speech.
+
+The host retains at most 30 seconds of Float32 PCM per channel in RAM for slicing the exact SDK segment, and clears it at stop/new session. Refinement passes PCM through stdin, never a temporary audio file. The archive retains `originalText` when text changes. Detected overlap restores the original; contextual speaker-name suggestions use the original. This path does not modify dictation or voice-command verification/execution.

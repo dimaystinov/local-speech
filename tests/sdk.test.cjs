@@ -2,7 +2,7 @@ const {test}=require('node:test'),assert=require('node:assert/strict'),vm=requir
 const root=path.resolve(__dirname,'..');
 function harness({hints={hardwareConcurrency:8,deviceMemory:8},systemAvailable=false,loadHook=null}={}){
  const engines=[],events=[],captures=[];
- class Engine{constructor(model,emit,error,options){Object.assign(this,{model,emit,error,options,packets:[]});engines.push(this);}async load(progress,options){this.optionsLoaded=options;if(loadHook)await loadHook(this);return {downloadedBytes:0};}begin(options){this.session=options;}async audio(pcm,rate,id){if(this.closed)throw Error('closed');this.packets.push({pcm,rate,id});if(this.failAudio){this.failAudio=false;throw Object.assign(Error('overload'),{code:'overload'});}}async end(){this.emit({type:'final',sessionId:this.session.sessionId,segmentId:this.session.segmentBase+1,text:'не удаляй Docker',startMs:this.session.offsetMs,endMs:this.session.offsetMs+100});}close(){this.closed=true;}}
+ class Engine{constructor(model,emit,error,options){Object.assign(this,{model,emit,error,options,packets:[]});engines.push(this);}async load(progress,options){this.optionsLoaded=options;if(loadHook)await loadHook(this);return {downloadedBytes:0};}begin(options){this.session=options;}async audio(pcm,rate,id,hints){if(this.closed)throw Error('closed');this.packets.push({pcm,rate,id,hints});if(this.failAudio){this.failAudio=false;throw Object.assign(Error('overload'),{code:'overload'});}}async end(){this.emit({type:'final',sessionId:this.session.sessionId,segmentId:this.session.segmentBase+1,text:'не удаляй Docker',startMs:this.session.offsetMs,endMs:this.session.offsetMs+100});}close(){this.closed=true;}}
  class Native{constructor(API,emit,state){this.emit=emit;this.state=state;}async check(){return {status:systemAvailable?'available':'unsupported'};}start(lang,id){this.sessionId=id;}endPhrase(){}stop(){this.state('stopped');}dispose(){this.closed=true;}}
  class Capture{constructor(onSamples,onEnded,options){Object.assign(this,{onSamples,onEnded,options});captures.push(this);}async start(){}async stop(){if(this.tail)await this.onSamples(this.tail,16000);this.stopped=true;}}
  const ctx={queueMicrotask,URL,Float32Array,AbortController,console,setTimeout,clearTimeout,crypto:require('node:crypto').webcrypto,navigator:hints,location:{href:'https://host/app/',origin:'https://host'},LocalEngine:Engine,SystemRecognizer:Native,MicrophoneCapture:Capture};vm.createContext(ctx);
@@ -59,4 +59,50 @@ test('failure while replaying the fallback reports the replay cause',async()=>{
  h.client.nextBackend=async(...args)=>{await next(...args);h.engines.at(-1).audio=async()=>{throw Object.assign(Error('replay decode failed'),{code:'wasm-failure'});};};
  h.engines[0].failAudio=true;await h.client.write(new Float32Array(1600),16000);
  const event=h.events.find(x=>x.type==='error');assert.equal(event.code,'wasm-failure');assert.match(event.message,/replay decode failed/);assert.equal(h.engines.length,2);await h.client.dispose();
+});
+
+
+test('optional upstream queue hint survives SDK packetization and rejects invalid counts before buffering',async()=>{
+ const h=harness();await h.client.start({input:'pcm'});
+ for(const hints of [null,1,[],{pendingPackets:-1},{pendingPackets:151},{pendingPackets:1.5},{pendingPackets:NaN},{pendingPackets:Infinity},{pendingPackets:'5'}]){
+  await assert.rejects(h.client.write(new Float32Array(1600),16000,hints),/hints|pendingPackets/);
+ }
+ assert.equal(h.client.diagnostics().bufferedMs,0);assert.equal(h.engines[0].packets.length,0);
+ await h.client.write(new Float32Array(3200),16000,{pendingPackets:15});
+ assert.deepEqual(h.engines[0].packets.map(p=>p.hints.pendingPackets),[15,15]);
+ await h.client.write(new Float32Array(1600),16000);assert.equal(h.engines[0].packets.at(-1).hints.pendingPackets,0);
+ await h.client.dispose();
+});
+
+test('fallback replay advertises its buffered backlog rather than one in-flight packet',async()=>{
+ const h=harness();await h.client.start({input:'pcm'});
+ for(let i=0;i<12;i++)await h.client.write(new Float32Array(1600),16000);
+ h.engines[0].failAudio=true;await h.client.write(new Float32Array(1600),16000);
+ assert.deepEqual(h.engines[1].packets.map(p=>p.hints.pendingPackets),Array.from({length:13},(_,i)=>13-i));
+ await h.client.dispose();
+});
+
+
+test('actual bridge timeout interrupts SDK fallback preparation and stops without awaiting its blocked write',async()=>{
+ let expire,loads=0;
+ const h=harness({loadHook:engine=>{
+  if(++loads!==2)return;
+  return new Promise((_,reject)=>{const close=engine.close.bind(engine);engine.close=()=>{close();reject(Error('Fallback cancelled'));};});
+ }});
+ const messages=[];Object.assign(h.ctx,{atob,Uint8Array,DataView,
+  setTimeout(fn,ms){assert.equal(ms,8000);expire=fn;return 1;},clearTimeout(){},
+  webkit:{messageHandlers:{speech:{postMessage:message=>messages.push(message)}}},
+ });
+ vm.runInContext(fs.readFileSync(path.join(root,'apps/mac/Web/bridge.js'),'utf8'),h.ctx);
+ const options={channels:['call'],language:'mixed',terms:[],cacheOnly:false};
+ assert.equal(await h.ctx.CallBridge.prepare(options),true);
+ h.engines[0].failAudio=true;
+ const write=h.ctx.CallBridge.audio('call',Buffer.alloc(6400).toString('base64'),16000,1);
+ await new Promise(r=>setImmediate(r));assert.equal(h.engines.length,2);
+ const stopping=h.ctx.CallBridge.stop();await new Promise(r=>setImmediate(r));expire();
+ await stopping;assert.equal(await write,false);assert.ok(h.engines.every(e=>e.closed));
+ assert.equal(messages.filter(m=>m.type==='failure').length,1);
+ assert.match(messages.find(m=>m.type==='failure').message,/tail.*cancelled/i);
+ assert.equal(messages.filter(m=>m.type==='stopped').length,1);assert.equal(messages.some(m=>m.type==='ack'),false);
+ assert.equal(await h.ctx.CallBridge.prepare(options),true);await h.ctx.CallBridge.stop();
 });

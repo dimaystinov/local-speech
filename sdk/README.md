@@ -1,4 +1,4 @@
-# LocalSpeech browser SDK 0.1.0 — integration candidate
+# LocalSpeech browser SDK — integration candidate
 
 Headless continuous local recognition for an existing web application. Models and runtime are self-hosted, audio is processed on the client. This is a browser integration candidate, not a claim of paid-ASR parity or certified phone support. Native iOS is a separate deferred adapter.
 
@@ -54,7 +54,7 @@ Terms: at most32 strings of80 characters; controls/blank/nonstring terms rejecte
 
 `maxSegmentSeconds` bounds offline recognition windows (default12, range3..20 seconds). Shorter windows reduce buffering latency but may reduce context and increase inference frequency; they do not guarantee real-time speed. Streaming RU segmentation is unchanged.
 
-`prepare()` optional; `start()` also prepares. `start({input:'pcm'})` permits externally captured normalized Float32 PCM via `await write(samples, rate)`. Use <=1 second packets, 8–96kHz, fixed rate per session; SDK splits into100ms packets and preserves caller buffers. Await write for bounded producer backpressure. Direct PCM input is suitable for test files or your own capture adapter, not a Node/native ASR backend.
+`prepare()` optional; `start()` also prepares. `start({input:'pcm'})` permits externally captured normalized Float32 PCM via `await write(samples, rate)`. Use <=1 second packets, 8–96kHz, fixed rate per session; SDK splits into100ms packets and preserves caller buffers. Await write for bounded producer backpressure. If your capture adapter already has a bounded queue before that call, pass `write(samples, rate, {pendingPackets: queuedPackets})`, including the current packet. The optional hint must be an integer from 0 to 150; it suppresses speculative previews during backlog and never increases queue capacity or replaces producer backpressure. Direct PCM input is suitable for test files or your own capture adapter, not a Node/native ASR backend.
 
 `state` notifications are queued as microtasks to prevent reentrant observers corrupting lifecycle operations. Other events include backend, context, progress, warning, recovered, partial, final, interrupted, error. Host listener exceptions are isolated. Call the unsubscribe function returned by on() when appropriate.
 
@@ -92,3 +92,7 @@ await speaker.dispose();
 The worker produces 256-dimensional normalized embeddings locally using WASM. A profile must use the exact `LocalSpeechSpeakers.modelId`; do not silently migrate embeddings across models. The pure `speaker-profiles.js` helper validates vectors, bounds audio rings and conservatively matches profiles/anonymous clusters. Similarity is not a calibrated probability and does not authenticate people.
 
 The optional `speaker.segment(samples, sampleRate)` API lazily loads pinned pyannote segmentation weights and returns local speaker/overlap intervals. Load `speaker-diarization.js` to combine segmentation with clean-speech matching through `LocalSpeechDiarization.analyze`. Segmenter speaker slots are local to each window; saved profiles provide cross-session matching. The Mac example implements bounded background attribution, enrollment and private local persistence. Measured accuracy and release limitations are documented in `docs/diarization-validation.md` and `apps/mac/README.md`.
+
+## Versions and updates
+
+See [release and update instructions](../docs/releases.md). `LocalSpeech.version` and `diagnostics().version` report the built SDK version.

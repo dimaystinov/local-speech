@@ -76,9 +76,12 @@
       })();this.startTask=job;job.finally(()=>{if(this.startTask===job)this.startTask=null;}).catch(()=>{});return job;
     }
     beginEngine(offsetMs){this.engine.begin({sessionId:this.sessionId,segmentBase:this.segmentBase,offsetMs,pauseSeconds:this.options.pauseSeconds,maxSegmentSeconds:this.options.maxSegmentSeconds,threshold:.006});}
-    write(samples,sampleRate){if(this.input!=='pcm')return Promise.reject(Error('write requires start({input:"pcm"})'));return this.accept(samples,sampleRate);}
-    async accept(samples,rate){
+    write(samples,sampleRate,hints){if(this.input!=='pcm')return Promise.reject(Error('write requires start({input:"pcm"})'));return this.accept(samples,sampleRate,hints);}
+    async accept(samples,rate,hints={}){
       const acceptingEpoch=this.epoch;
+      if(!hints||typeof hints!=='object'||Array.isArray(hints))throw Error('Audio hints must be an object');
+      const pendingPackets=hints.pendingPackets===undefined?0:hints.pendingPackets;
+      if(!Number.isSafeInteger(pendingPackets)||pendingPackets<0||pendingPackets>150)throw Error('pendingPackets must be an integer from 0 to 150');
       if(!['starting','listening','recovering'].includes(this.state)&&!(this.state==='stopping'&&this.flushing))throw Error('Session is not accepting audio');
       if(!(samples instanceof Float32Array)||!samples.length||!Number.isFinite(rate)||rate<8000||rate>96000||samples.length>rate)throw Error('Expected 1..1000 ms Float32 PCM at 8000..96000 Hz');
       for(const sample of samples)if(!Number.isFinite(sample)||Math.abs(sample)>1)throw Error('PCM must be finite and normalized to [-1,1]');
@@ -93,7 +96,7 @@
           this.quietMs=speech?0:this.quietMs+duration;if(speech)this.speechSinceTextMs+=duration;
           if(this.quietMs>=this.options.pauseSeconds*1000)this.system.endPhrase();
           if(this.speechSinceTextMs>=8000){await this.recover(Error('Speech detected without system transcript'),'no-result');}
-        }else if(this.engine){try{await this.engine.audio(packet.slice(),rate,this.sessionId);}catch(error){if(acceptingEpoch!==this.epoch)throw Error('Audio processing was interrupted');if(this.state==='stopping')throw error;await this.recover(error,error.code||'failure');}}
+        }else if(this.engine){try{await this.engine.audio(packet.slice(),rate,this.sessionId,{pendingPackets});}catch(error){if(acceptingEpoch!==this.epoch)throw Error('Audio processing was interrupted');if(this.state==='stopping')throw error;await this.recover(error,error.code||'failure');}}
       }
     }
     result(data){
@@ -122,7 +125,7 @@
           try{
             while(epoch===this.epoch&&this.state==='recovering'){
               const batch=this.buffer.snapshot().filter(p=>p.startMs>=cursor-.01);if(!batch.length)break;
-              for(const p of batch){if(epoch!==this.epoch||this.state!=='recovering')return;if(Date.now()-started>90000)throw Error('Recovery timeout');await this.engine.audio(p.samples,p.rate,this.sessionId);cursor=p.endMs;}
+              for(let i=0;i<batch.length;i++){const p=batch[i];if(epoch!==this.epoch||this.state!=='recovering')return;if(Date.now()-started>90000)throw Error('Recovery timeout');await this.engine.audio(p.samples,p.rate,this.sessionId,{pendingPackets:Math.min(150,batch.length-i)});cursor=p.endMs;}
             }
             if(epoch===this.epoch&&this.state==='recovering'){this.speechSinceTextMs=0;this.setState('listening');this.emit('recovered',{previous,backend:this.candidate.key,lostMs:this.buffer.lostMs});}return;
           }catch(nextError){if(epoch!==this.epoch)return;this.closeBackend();error=nextError;reason=nextError.code||'failure';}
@@ -148,8 +151,8 @@
       })();this.stopTask=job;job.finally(()=>{if(this.stopTask===job)this.stopTask=null;}).catch(()=>{});return job;
     }
     dispose(){if(this.disposeTask)return this.disposeTask;if(this.state==='disposed')return Promise.resolve();this.disposing=true;this.disposeTask=Promise.resolve().then(async()=>{await this.stop();this.setState('disposed');this.listeners.clear();this.buffer.clear();});return this.disposeTask;}
-    diagnostics(){return {version:'0.1.0',state:this.state,sessionId:this.sessionId||null,backend:this.candidate?.key||null,plan:this.plan,load:this.loadStats||null,bufferedMs:this.buffer.endMs-this.buffer.committedMs,lostMs:this.buffer.lostMs};}
+    diagnostics(){return {version:'__LOCAL_SPEECH_VERSION__',state:this.state,sessionId:this.sessionId||null,backend:this.candidate?.key||null,plan:this.plan,load:this.loadStats||null,bufferedMs:this.buffer.endMs-this.buffer.committedMs,lostMs:this.buffer.lostMs};}
     exportPendingAudio(){return this.buffer.snapshot();}
   }
-  root.LocalSpeech=Object.freeze({version:'0.1.0',create:options=>new SpeechClient(options)});
+  root.LocalSpeech=Object.freeze({version:'__LOCAL_SPEECH_VERSION__',create:options=>new SpeechClient(options)});
 })(globalThis);

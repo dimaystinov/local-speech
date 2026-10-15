@@ -1,0 +1,18 @@
+{
+  "version": "1.13.8",
+  "source": "https://pypi.org/project/sherpa-onnx/1.13.8/",
+  "files": [
+    {
+      "path": "lib/libsherpa-onnx-c-api.dylib",
+      "sha256": "579e3d8765b27eea31a6bf55018a7735e32f1f69734b35bf239c8cd332ae59ed"
+    },
+    {
+      "path": "lib/libonnxruntime.dylib",
+      "sha256": "b0613d0ae53199a83b05fa48e169211498e9d40d54beaa372068ebe5ec5b0929"
+    },
+    {
+      "path": "include/sherpa-onnx/c-api/c-api.h",
+      "sha256": "2a1b95084be8fd1deb3228fcad2fd3f7f0258b64582f7402281ec174c7b7f4ce"
+    }
+  ]
+}

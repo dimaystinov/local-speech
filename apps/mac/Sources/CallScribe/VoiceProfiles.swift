@@ -25,6 +25,8 @@ struct VoiceAttribution: Codable, Equatable {
     let kind: String
     let speakerId: String?
     var intervals: [VoiceInterval]? = nil
+    var contextName: String? = nil
+    var displayLabel: String { contextName.map { "\(label) · предположительно \($0)" } ?? label }
     func timeline(baseSeconds: Double) -> String {
         (intervals ?? []).filter { $0.kind != "silence" }.map { interval in
             func time(_ ms: Double) -> String {

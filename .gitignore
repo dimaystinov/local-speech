@@ -19,3 +19,7 @@ validation/
 .build/
 
 .speaker-deps/
+
+# Original synthetic Roki voice fixture (not a user recording).
+!apps/mac/Assets/RokiVoice/reference.wav
+*.tgz

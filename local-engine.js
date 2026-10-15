@@ -122,15 +122,18 @@ class LocalEngine {
       try{this.worker.postMessage({action:'transcribe',id,sampleRate,samples:samples.buffer},[samples.buffer]);}catch(e){this.close(e);}
     });
   }
-  audio(samples,sampleRate,sessionId){
+  audio(samples,sampleRate,sessionId,hints={}){
     if(this.closed||!this.worker||this.loading)return Promise.reject(this.failure||Error('Движок закрыт'));
     if(!this.sessionId||sessionId!==this.sessionId||this.resolveEnd)return Promise.reject(Error('Неверный или завершённый сеанс'));
     try{samples=this.validateAudio(samples,sampleRate);}catch(e){return Promise.reject(e);}
+    if(!hints||typeof hints!=='object'||Array.isArray(hints))return Promise.reject(Error('Audio hints must be an object'));
+    const pendingPackets=hints.pendingPackets===undefined?0:hints.pendingPackets;
+    if(!Number.isSafeInteger(pendingPackets)||pendingPackets<0||pendingPackets>150)return Promise.reject(Error('pendingPackets must be an integer from 0 to 150'));
     if(this.pending.size>=50){const e=Error('Перегрузка: очередь аудио больше 5 секунд');e.code='overload';return Promise.reject(e);}
     const id=++this.sequence;
     return new Promise((resolve,reject)=>{
       this.pending.set(id,{resolve,reject,time:Date.now()});
-      try{this.worker.postMessage({action:'audio',sessionId,id,sampleRate,queueDepth:this.pending.size,samples:samples.buffer},[samples.buffer]);}catch(e){this.close(e);}
+      try{this.worker.postMessage({action:'audio',sessionId,id,sampleRate,queueDepth:Math.max(this.pending.size,pendingPackets),samples:samples.buffer},[samples.buffer]);}catch(e){this.close(e);}
     });
   }
   end(sessionId,sampleRate){

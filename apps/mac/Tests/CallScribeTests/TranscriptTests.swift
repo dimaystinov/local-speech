@@ -2,6 +2,16 @@ import XCTest
 import AVFoundation
 @testable import CallScribe
 final class TranscriptTests: XCTestCase {
+    func testReadableCopyPreservesWordsSpeakersAndMarksUnfinishedText() {
+        var doc = TranscriptDocument()
+        doc.title = "План проекта"
+        doc.append(channel: .microphone, session: "s", segment: 1, seconds: 2, text: "Не удаляй 15 файлов. API v2.")
+        doc.append(channel: .call, session: "s", segment: 1, seconds: 3, text: "Согласен.")
+        let text = doc.readableText(partials: [.call: "Ещё проверим", .microphone: "  "])
+        XCTAssertEqual(text, "План проекта\n\n[00:02] Я\nНе удаляй 15 файлов. API v2.\n\n[00:03] Собеседники\nСогласен.\n\nСобеседники · незавершённая фраза\nЕщё проверим")
+        XCTAssertFalse(text.contains("Голоса по времени"))
+        XCTAssertEqual(doc.lines.count, 2)
+    }
     func testSeparateChannelsAndDuplicateFinals() {
         var doc = TranscriptDocument()
         doc.append(channel: .microphone, session: "a", segment: 1, seconds: 2, text: "Не удаляй 15 файлов")

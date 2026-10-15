@@ -6,7 +6,7 @@ export interface SpeechClient {
  on(type: string, listener: (event: SpeechEvent) => void): () => void;
  prepare(options?: {input?: 'microphone' | 'pcm'}): Promise<Record<string, unknown>>;
  start(options?: {input?: 'microphone' | 'pcm'}): Promise<Record<string, unknown>>;
- write(samples: Float32Array, sampleRate: number): Promise<void>;
+ write(samples: Float32Array, sampleRate: number, hints?: {pendingPackets?: number}): Promise<void>;
  stop(): Promise<unknown>;
  dispose(): Promise<void>;
  diagnostics(): Record<string, unknown>;

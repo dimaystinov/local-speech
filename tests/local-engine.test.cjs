@@ -127,3 +127,16 @@ test('standalone first load persists URL-scoped metadata for a zero-fetch cache-
  stored.delete(manifestURL);ctx.caches.match=async key=>{legacyCalls++;assert.equal(key,manifestURL);return new Response(JSON.stringify(manifest));};
  const beforeLegacy=network.length,legacy=make();await legacy.load(()=>{},{vadMode:'energy',cacheOnly:true});legacy.close();assert.equal(legacyCalls,1);assert.equal(network.length,beforeLegacy);
 });
+
+
+test('worker depth includes validated upstream backlog without lowering local pending depth or bypassing bounds',async()=>{
+ const f=fixture();await f.load();const e=f.e,w=f.workers[0];e.begin({sessionId:'s'});
+ for(const hints of [null,1,[],{pendingPackets:-1},{pendingPackets:151},{pendingPackets:1.5},{pendingPackets:NaN},{pendingPackets:Infinity},{pendingPackets:'5'}]){
+  await assert.rejects(e.audio(new Float32Array(1600),16000,'s',hints),/hints|pendingPackets/);
+ }
+ assert.equal(e.pending.size,0);
+ const a=e.audio(new Float32Array(1600),16000,'s',{pendingPackets:12});assert.equal(w.messages.at(-1).queueDepth,12);
+ const b=e.audio(new Float32Array(1600),16000,'s',{pendingPackets:0});assert.equal(w.messages.at(-1).queueDepth,2);
+ for(const message of w.messages.filter(m=>m.action==='audio'))w.onmessage({data:{type:'ack',id:message.id,sessionId:'s'}});
+ await Promise.all([a,b]);e.close();
+});

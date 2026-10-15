@@ -1,0 +1,16 @@
+{
+  "id": "roki-composed-01b",
+  "title": "Роки · Qwen · собранная",
+  "reference_file": "reference.wav",
+  "reference_sha256": "df62777df706664fa13a056863508188e54f3c0e9c431d5d1ebf2f4d72408fbd",
+  "reference_text": "Привет, я Роки. Как ты? Давай спокойно разберёмся с планами. Я рядом и помогу тебе. Всё получится.",
+  "source_model": "mlx-community/Qwen3-TTS-12Hz-1.7B-VoiceDesign-8bit",
+  "source_revision": "f90d617701d9f7f4ca499291e0b57f2b3c2fd2ee",
+  "design_prompt": "A young adult woman speaking native Russian with a medium-pitched, slightly lower feminine mezzo-soprano voice. Clear, composed, confident and focused. Calm, firm and matter-of-fact, like a capable personal assistant who keeps things on schedule. Reserved warmth, less tenderness, no cooing or affectionate sweetness. Even conversational pace, precise consonants, restrained natural intonation and decisive sentence endings. A real human female voice, not a cartoon, no whispering, no vocal fry, not angry or harsh.",
+  "seed": 41,
+  "temperature": 0.8,
+  "model": "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-8bit",
+  "revision": "e7dd0585652209fa0d7783659aad4e8a324de11c",
+  "max_tokens": 750,
+  "source": "Original synthetic voice designed locally with Qwen; user selected sample 01b."
+}

@@ -65,7 +65,10 @@
       }
       if(this.#clusters.length>=this.#maxClusters)return uncertain(match?.score??best?.score??null);
       const index=this.#clusters.length+1;
-      const cluster={id:'voice'+index,label:'Голос '+index,anchor:vector};
+      let suffix=index;
+      const occupied=new Set([...this.#profiles.map(p=>p.id),...this.#clusters.map(p=>p.id)]);
+      while(occupied.has('voice'+suffix))suffix++;
+      const cluster={id:'voice'+suffix,label:'Голос '+index,anchor:vector};
       this.#clusters.push(cluster);
       return {speakerId:cluster.id,label:cluster.label,kind:'anonymous',similarity:null};
     }

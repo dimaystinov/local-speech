@@ -8,9 +8,10 @@ struct TranscriptLine: Identifiable, Codable, Equatable {
     let id: String
     let channel: AudioChannel
     let seconds: Double
-    let text: String
+    var text: String
+    var originalText: String?
     var speaker: VoiceAttribution?
-    var speakerLabel: String { speaker.map { channel.title + " · " + $0.label } ?? channel.title }
+    var speakerLabel: String { speaker.map { channel.title + " · " + $0.displayLabel } ?? channel.title }
 }
 struct TranscriptDocument: Codable {
     var id = UUID().uuidString
@@ -25,9 +26,42 @@ struct TranscriptDocument: Codable {
         let index = lines.firstIndex { $0.seconds > time } ?? lines.endIndex
         lines.insert(TranscriptLine(id: key, channel: channel, seconds: time, text: text), at: index)
     }
+    @discardableResult mutating func refine(id: String, original: String, candidate: String) -> Bool {
+        guard let index = lines.firstIndex(where: { $0.id == id }), lines[index].originalText == nil,
+              lines[index].text == original, lines[index].speaker?.kind != "overlap",
+              RefinementPolicy.accept(original: original, candidate: candidate), candidate != original else { return false }
+        lines[index].originalText = original; lines[index].text = candidate
+        return true
+    }
     mutating func attribute(id: String, speaker: VoiceAttribution) {
         guard let index = lines.firstIndex(where: { $0.id == id }) else { return }
         lines[index].speaker = speaker
+        if speaker.kind == "overlap", let original = lines[index].originalText {
+            lines[index].text = original; lines[index].originalText = nil
+        }
+        // Names from ASR are suggestions within this channel/session, never voice credentials.
+        let scope = id.split(separator: ":").dropLast().joined(separator: ":") + ":"
+        let indices = lines.indices.filter { lines[$0].id.hasPrefix(scope) && lines[$0].speaker?.kind == "anonymous" }
+        var candidates: [String: Set<String>] = [:]
+        for i in indices {
+            if let person = lines[i].speaker?.speakerId, let name = SpeakerContextNames.selfIntroduction(lines[i].originalText ?? lines[i].text) {
+                candidates[person, default: []].insert(name)
+            }
+        }
+        for i in indices {
+            let names = candidates[lines[i].speaker?.speakerId ?? ""] ?? []
+            lines[i].speaker?.contextName = names.count == 1 ? names.first : nil
+        }
+    }
+    func readableText(partials: [AudioChannel: String] = [:]) -> String {
+        var paragraphs = [title]
+        paragraphs += lines.map { "[" + Self.timestamp($0.seconds) + "] " + $0.speakerLabel + "\n" + $0.text }
+        for channel in AudioChannel.allCases {
+            if let text = partials[channel], !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                paragraphs.append(channel.title + " · незавершённая фраза\n" + text)
+            }
+        }
+        return paragraphs.joined(separator: "\n\n")
     }
     var plainText: String {
         title + "\n\n" + lines.map { "[" + Self.timestamp($0.seconds) + "] " + $0.speakerLabel + ": " + $0.text + (($0.speaker?.intervals?.count ?? 0) > 1 ? "\nГолоса по времени:\n" + ($0.speaker?.timeline(baseSeconds: $0.seconds) ?? "") : "") }.joined(separator: "\n\n")

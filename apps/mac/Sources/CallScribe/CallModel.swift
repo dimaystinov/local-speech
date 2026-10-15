@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 @MainActor final class CallModel: ObservableObject {
     let sdk = SDKHost()
     private let capture = MacCallCapture()
+    private let nativeRefinement = NativeRefinement()
     private let archive = TranscriptArchive()
     private let voiceStore = VoiceProfileStore()
     private var packetizer: AudioPacketizer?
@@ -21,10 +22,17 @@ import UniformTypeIdentifiers
     @Published var microphone = true
     @Published var language = "mixed"
     @Published var terms = ""
-    @Published var preferQuality = false
+    @Published var preferQuality = true
     @Published var speakerEnabled = true
     @Published var voiceName = ""
     @Published var voices: [VoiceProfile] = []
+    @Published private(set) var ownerProfileID = UserDefaults.standard.string(forKey: "voice.ownerProfileID") ?? ""
+    var ownerProfile: VoiceProfile? { voices.first { $0.id == ownerProfileID && $0.valid } }
+    @Published private(set) var ownerRecording = false
+    private let ownerMicrophone = DictationMicrophone()
+    private var ownerTask: Task<Void, Never>?
+    private var enrollingOwner = false
+    var ownerEnrollmentActive: Bool { enrollingOwner }
     @Published var voiceStatus = "Сохраните чистый образец: 4–15 секунд чистой речи одного человека."
     @Published var enrolling = false
     @Published var voiceSamples = Set<String>()
@@ -36,6 +44,8 @@ import UniformTypeIdentifiers
     @Published var levels: [AudioChannel: Float] = [:]
     @Published var backends: [AudioChannel: String] = [:]
     @Published var ready = false
+    var externalSessionActive: () -> Bool = { false }
+    @Published private(set) var panelOpen = false
     var active: Bool { state != "idle" }
     var elapsed: Double { max(0, Date().timeIntervalSince(sessionStarted)) }
     init() {
@@ -55,7 +65,7 @@ import UniformTypeIdentifiers
         catch { self.error = "Нет доступа к звуку приложений: \(error.localizedDescription)" }
     }
     func start() async {
-        guard !active, !enrolling, ready else { return }
+        guard !externalSessionActive(), !active, !enrolling, ready else { return }
         generation += 1; let current = generation
         voiceSamples = []
         voiceStatus = speakerEnabled ? "Голоса определяются локально по сохранённым образцам." : "Определение голосов выключено."
@@ -110,6 +120,20 @@ import UniformTypeIdentifiers
                 document.append(channel: channel, session: session, segment: segment, seconds: sessionOffset + start, text: text)
                 let end = (event["endMs"] as? Double).flatMap { $0.isFinite && $0 >= 0 ? $0 / 1000 : nil } ?? start
                 document.durationSeconds = max(document.durationSeconds ?? 0, sessionOffset + end); save()
+                if event["backend"] as? String == "whisper", RefinementPolicy.eligible(text),
+                   let (audio, rate) = sdk.refinementSample(channel, start: start, end: end) {
+                    let documentID = document.id
+                    let lineID = channel.rawValue + ":" + session + ":" + String(segment)
+                    Task { [weak self] in
+                        guard let self else { return }
+                        // Let the primary SDK drain captured PCM before spending CPU on refinement.
+                        for _ in 0..<20 where self.sdk.outstanding > 2 { try? await Task.sleep(nanoseconds: 50_000_000) }
+                        guard self.sdk.outstanding <= 2, self.document.id == documentID,
+                              let refined = await self.nativeRefinement.refine(audio: audio, rate: rate, original: text),
+                              self.document.id == documentID else { return }
+                        if self.document.refine(id: lineID, original: text, candidate: refined) { self.save() }
+                    }
+                }
                 if let ms = event["processing_ms"] as? Double, ms.isFinite {
                     timings[channel] = String(format: "Завершение %.1f с · звук %.1f с", ms / 1000, max(0, end - start))
                 }
@@ -122,7 +146,7 @@ import UniformTypeIdentifiers
         }
     }
     func newDocument() {
-        guard !active else { return }; save(); document = TranscriptDocument(); partials = [:]; error = nil; status = "Новый созвон"
+        guard !externalSessionActive(), !active else { return }; save(); document = TranscriptDocument(); partials = [:]; error = nil; status = "Новый созвон"
     }
     func save() {
         guard !document.lines.isEmpty else { return }
@@ -134,10 +158,10 @@ import UniformTypeIdentifiers
             do { try document.plainText.write(to: url, atomically: true, encoding: .utf8) } catch { self.error = error.localizedDescription }
         }
     }
-    func copyText() { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(document.plainText, forType: .string) }
+    func copyText() { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(document.readableText(partials: partials), forType: .string) }
     // File mode exercises the same SDK bridge without granting capture permissions.
     func testFile(_ url: URL) async {
-        guard !active, !enrolling, ready else { return }
+        guard !externalSessionActive(), !active, !enrolling, ready else { return }
         generation += 1; let current = generation
         voiceSamples = []
         voiceStatus = speakerEnabled ? "Голоса определяются локально по сохранённым образцам." : "Определение голосов выключено."
@@ -176,9 +200,15 @@ import UniformTypeIdentifiers
         case "speaker-status", "voice-error": voiceStatus = message["message"] as? String ?? "Голос не определён"
         case "voice-profile":
             do {
+                if enrollingOwner && ownerTask?.isCancelled == true { return }
                 let data = try JSONSerialization.data(withJSONObject: message["profile"] ?? [:])
                 let profile = try JSONDecoder().decode(VoiceProfile.self, from: data)
-                let updated = voices + [profile]; try voiceStore.save(updated); voices = updated
+                let updated = (enrollingOwner ? voices.filter { $0.id != ownerProfileID } : voices) + [profile]
+                try voiceStore.save(updated); voices = updated
+                if enrollingOwner {
+                    ownerProfileID = profile.id
+                    UserDefaults.standard.set(profile.id, forKey: "voice.ownerProfileID")
+                }
                 voiceStatus = "Голос «\(profile.name)» сохранён локально. На следующем созвоне включите определение голосов."
                 voiceName = ""
             } catch { voiceStatus = "Не удалось сохранить профиль: \(error.localizedDescription)" }
@@ -186,12 +216,47 @@ import UniformTypeIdentifiers
         }
     }
     func removeVoice(_ id: String) {
-        guard !active, !enrolling else { return }
-        do { let updated = voices.filter { $0.id != id }; try voiceStore.save(updated); voices = updated }
+        guard !externalSessionActive(), !active, !enrolling else { return }
+        do {
+            let updated = voices.filter { $0.id != id }; try voiceStore.save(updated); voices = updated
+            if ownerProfileID == id { ownerProfileID = ""; UserDefaults.standard.removeObject(forKey: "voice.ownerProfileID") }
+        }
         catch { voiceStatus = error.localizedDescription }
     }
+    func recordOwnerVoice() {
+        guard !externalSessionActive(), !active, !enrolling, !panelOpen, ready else { return }
+        enrolling = true; ownerRecording = true; enrollingOwner = true
+        voiceStatus = "Подготовка микрофона для вашего голосового профиля…"
+        ownerTask = Task { [weak self] in
+            guard let self else { return }
+            defer { self.enrolling = false; self.ownerRecording = false; self.enrollingOwner = false; self.ownerTask = nil }
+            let sample = OwnerVoiceSample()
+            let packets = AudioPacketizer(emit: { _, data, rate in sample.append(data, rate: rate) }, error: { sample.fail($0) })
+            do {
+                try await self.ownerMicrophone.start(onAudio: { packets.append($0, channel: .microphone) },
+                    onLevel: { _ in }, onError: { sample.fail($0) })
+                for remaining in stride(from: 12, through: 1, by: -1) {
+                    try Task.checkCancellation()
+                    self.voiceStatus = "Говорите своим обычным голосом · осталось \(remaining) с. Запись не сохраняется."
+                    try await Task.sleep(nanoseconds: 1_000_000_000)
+                }
+                await self.ownerMicrophone.stop(); packets.flush(); self.ownerRecording = false
+                try Task.checkCancellation()
+                let (data, rate) = try sample.snapshot()
+                self.voiceStatus = "Проверяю чистоту и однородность вашего голоса…"
+                try await self.sdk.enrollVoice(name: "Мой голос", data: data, rate: rate)
+                try Task.checkCancellation()
+                self.voiceStatus = "Мой голос сохранён. Роки будет принимать только уверенно распознанные реплики владельца."
+            } catch {
+                await self.ownerMicrophone.stop()
+                self.voiceStatus = error is CancellationError ? "Обучение отменено. Предыдущий профиль сохранён." : "Профиль не создан: \(error.localizedDescription)"
+            }
+        }
+    }
+    func cancelOwnerVoice() { ownerTask?.cancel() }
+    func stopOwnerVoice() async { ownerTask?.cancel(); await ownerTask?.value }
     func rememberVoice(_ line: TranscriptLine) {
-        guard !active, !enrolling, !voiceName.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        guard !externalSessionActive(), !active, !enrolling, !voiceName.trimmingCharacters(in: .whitespaces).isEmpty else { return }
         enrolling = true; voiceStatus = "Сравниваю части образца и сохраняю голос…"
         Task {
             defer { enrolling = false }
@@ -200,9 +265,11 @@ import UniformTypeIdentifiers
         }
     }
     func chooseVoiceFile() {
-        guard !active, !enrolling, !voiceName.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        guard !externalSessionActive(), !active, !enrolling, !voiceName.trimmingCharacters(in: .whitespaces).isEmpty else { return }
         let panel = NSOpenPanel(); panel.allowedContentTypes = [.wav, .mp3, .mpeg4Audio, .aiff]; panel.allowsMultipleSelection = false
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        panelOpen = true
+        let response = panel.runModal(); panelOpen = false
+        guard response == .OK, let url = panel.url, !externalSessionActive() else { return }
         enrolling = true; voiceStatus = "Проверяю образец голоса…"
         Task {
             defer { enrolling = false }
@@ -229,6 +296,8 @@ import UniformTypeIdentifiers
         return error.localizedDescription
     }
     func chooseFile() {
+        guard !externalSessionActive(), !active, !enrolling, !panelOpen else { return }
+        panelOpen = true; defer { panelOpen = false }
         let panel = NSOpenPanel(); panel.allowedContentTypes = [.wav, .mp3, .mpeg4Audio]; panel.allowsMultipleSelection = false
         if panel.runModal() == .OK, let url = panel.url { Task { await testFile(url) } }
     }

@@ -1,0 +1,30 @@
+{
+  "name": "local-speech-sdk",
+  "version": "0.2.0",
+  "description": "Self-hosted, local browser speech recognition SDK",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dimaystinov/local-speech.git"
+  },
+  "license": "UNLICENSED",
+  "main": "dist/local-speech/local-speech.js",
+  "module": "dist/local-speech/local-speech.mjs",
+  "types": "dist/local-speech/local-speech.d.ts",
+  "files": [
+    "dist/local-speech/",
+    "tools/download-models.py",
+    "evidence/model-manifest.json",
+    "assets/",
+    "docs/releases.md",
+    "CHANGELOG.md"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.cjs",
+    "build": "node tools/build-sdk.cjs",
+    "prepare": "node tools/build-sdk.cjs --runtime-only",
+    "release:check": "node tools/check-release.cjs"
+  }
+}

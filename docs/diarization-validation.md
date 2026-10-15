@@ -109,3 +109,19 @@ A controlled live retest selected **QuickTime Player only**, disabled microphone
 - Stable Developer ID signing and notarization for Mac distribution; physical iPhone/Android/browser checks remain separate gates.
 
 Until these pass, use the continuous transcript as the primary output and treat speaker names as optional, editable suggestions.
+
+
+## Follow-up model experiments
+
+Additional enrollment variants did not justify a production change. Multiple clean same-person samples increased headset coverage from 20.68% to 22.72%; pooling up to 15 seconds of oracle-grouped clean speech reached 24.87%. Distant-microphone coverage stayed 2.76%. These are exploratory uses of the same evaluation excerpt, not held-out improvements.
+
+An actual alternative embedding A/B used official WeSpeaker ECAPA512-LM, 24,861,931 bytes, CC-BY-4.0, revision `a2f3dcb1c8702caccc7a55ceb57f5e8d1842112b`, SHA-256 `d71b85d9b48058ef68004f04f1b78acebefb9dfcf542e19b976a12a5ad1f10b0`. Its 161 native single-thread inferences had median 37.9 ms and p95 50.8 ms; these are not browser timings. The new embedding space requires separate calibration. At exploratory cosine .65, coverage was 68.85% / 27.71%, but named true overlap increased to 3.51 seconds on the headset recording. Requiring both query halves to identify the same person reduced coverage to 26.01% / 1.23%, with .01 / 0 seconds of named overlap. Lower thresholds already produced wrong identities. **The candidate is not shipped:** there is no demonstrated safe improvement for noisy and overlapping speech together.
+
+
+## Backpressure correction and repeat ABBA
+
+The native bridge serialized PCM writes, so the worker saw one in-flight packet even when the upstream native queue contained many packets. The SDK now accepts a validated optional `pendingPackets` hint and propagates it into the existing interim-decoding pressure control, including fallback replay. Stopping also bounds queue draining to eight seconds and flushes independent channels concurrently; an unprocessed tail produces an explicit failure rather than an indefinite wait.
+
+A new four-arm, two-channel, 16 kHz ABBA run of the same fixture completed after these changes: 80 final phrases, 4,800/4,800 acknowledged packets, no loss/rejection/failure. Pooled ASR processing p95 was 1,784.74 ms without diarization and 1,825.48 ms with it (+2.28%); speaker-after-text p95 was 1,417.40 ms. This run passed the predefined 15% overhead/5-second speaker gates. One Swift build and uncontrolled background applications overlapped the broader experiment, so the measurements do not isolate the causal contribution of the code change or establish production/device guarantees. The earlier failing run remains in this report. Recognition accuracy gates and hour-long system-capture validation remain open.
+
+A microphone-only native dictation smoke test during the same work exposed a bounded stop failure: its audio tail did not drain within eight seconds, so unfinished audio was explicitly cancelled. This was not a successful lossless native stop; competing playback/inference was present. The bridge timeout now includes per-channel pending-packet count and client state for the next reproduction. Browser ABBA success must not be used to hide this remaining native/load issue.

@@ -42,6 +42,14 @@ test('anonymous anchors cannot drift through incremental observations',()=>{
  const session=new Session();session.classify(axis());assert.equal(session.classify(vector(.71,.7)).speakerId,'voice1');
  assert.equal(session.classify(axis(1)).speakerId,'voice2');
 });
+test('anonymous voices never reuse a saved profile identity',()=>{
+ const session=new Session([profile('voice1','Owner'),profile('voice3','Other',axis(3))]);
+ const unknown=session.classify(axis(1));
+ assert.notEqual(unknown.speakerId,'voice1');assert.notEqual(unknown.speakerId,'voice3');
+ assert.equal(session.classify(axis(1)).speakerId,unknown.speakerId);
+ assert.equal(session.classify(axis()).speakerId,'voice1');
+ const next=session.classify(axis(2));assert.notEqual(next.speakerId,'voice3');assert.notEqual(next.speakerId,unknown.speakerId);
+});
 test('ambiguous anonymous matches are uncertain',()=>{
  const session=new Session();session.classify(axis());session.classify(axis(1));assert.equal(session.classify(vector(1,1)).kind,'uncertain');
 });

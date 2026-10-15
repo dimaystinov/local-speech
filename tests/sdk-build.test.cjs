@@ -65,11 +65,23 @@ test('failed publish restores the prior owned package and removes only staging o
   assert.deepEqual(fs.readdirSync(path.dirname(f.out)),['local-speech']);
 });
 test('legacy generated package migrates to explicit ownership marker',t=>{
-  const f=fixture(t);f.build();const file=path.join(f.out,'package-manifest.json'),manifest=JSON.parse(fs.readFileSync(file));delete manifest.package;fs.writeFileSync(file,JSON.stringify(manifest));
+  const f=fixture(t);f.build();const file=path.join(f.out,'package-manifest.json'),manifest=JSON.parse(fs.readFileSync(file));delete manifest.package;manifest.version='0.1.0';fs.writeFileSync(path.join(f.out,'local-speech.js'),'/* LocalSpeech 0.1.0; host locally; */');fs.writeFileSync(file,JSON.stringify(manifest));
   f.build(['small']);assert.equal(JSON.parse(fs.readFileSync(file)).package,'local-speech-sdk');
 });
 test('CLI rejects duplicate flags and unsupported model selections',t=>{
   const f=fixture(t);assert.equal(parseArgs([]),undefined);assert.deepEqual(parseArgs(['--models=small']),['small']);
   for(const args of [['--models=small','--models=whisper'],['--output=/tmp']])assert.throws(()=>parseArgs(args),/Usage/);
   for(const models of [[],['small','small'],['unknown'],['../small'],null])assert.throws(()=>buildSDK({projectRoot:f.root,outputRoot:f.out,models}));
+});
+
+test('runtime-only distribution needs no weights and uses the package version',t=>{
+ const f=fixture(t);fs.rmSync(path.join(f.root,'models'),{recursive:true});
+ f.write('sdk/local-speech.js',"globalThis.LocalSpeech={version:'__LOCAL_SPEECH_VERSION__'};");
+ buildSDK({projectRoot:f.root,outputRoot:f.out,models:['small'],runtimeOnly:true});
+ const manifest=JSON.parse(fs.readFileSync(path.join(f.out,'package-manifest.json')));
+ assert.equal(manifest.version,require('../package.json').version);assert.equal(manifest.weightsIncluded,false);
+ assert.ok(!manifest.files.some(x=>x.path.startsWith('models/')));
+ const ctx={};require('node:vm').runInNewContext(fs.readFileSync(path.join(f.out,'local-speech.js'),'utf8'),ctx);
+ assert.equal(ctx.LocalSpeech.version,manifest.version);
+ assert.ok(JSON.parse(fs.readFileSync(path.join(f.out,'evidence/model-manifest.json'))).length>0);
 });

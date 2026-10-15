@@ -61,3 +61,9 @@ CI runs deterministic tests without microphone access or model downloads. Device
 This repository contains the generic SDK, runtime, example and deterministic tests. No user recordings, transcripts, private project documents, credentials, model weights or prior Git history are included. Weights are downloaded separately and checked against `evidence/model-manifest.json`.
 
 Third-party components keep their licenses; see [notices](sdk/THIRD_PARTY_NOTICES.md). No open-source license has been assigned to original application code in this publication. Public visibility alone does not grant an unrestricted redistribution license.
+
+## SDK versions and GitHub updates
+
+Install a pinned version: `npm install --save-exact github:dimaystinov/local-speech#v0.2.0`.
+See [releases and upgrade/rollback instructions](docs/releases.md) and [changelog](CHANGELOG.md).
+The runtime archive includes JS/WASM; recognition model weights are installed separately.

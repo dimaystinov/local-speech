@@ -15,7 +15,7 @@ const pcm = (values = [.1, -.2, .3]) => {
 function fixture(hooks = {}) {
   const messages = [], clients = [], status = {textContent: ''};
   const context = {
-    URL, atob, Uint8Array, Float32Array, DataView, setTimeout, clearTimeout,
+    URL, atob, Uint8Array, Float32Array, DataView, setTimeout, clearTimeout, ...hooks.timers,
     location: {href:'http://127.0.0.1:8766/bridge.html'},
     document: {getElementById: () => status},
     webkit: {messageHandlers: {speech: {postMessage: message => messages.push(message)}}},
@@ -25,7 +25,7 @@ function fixture(hooks = {}) {
         emit(event) {this.callback(event);},
         async prepare(input) {this.prepareInput=input; await hooks.prepare?.(this);},
         async start(input) {this.startInput=input; await hooks.start?.(this);},
-        async write(samples, rate) {this.writes.push({samples:[...samples],rate}); await hooks.write?.(this, samples);},
+        async write(samples, rate, hints) {this.writes.push({samples:[...samples],rate,hints}); await hooks.write?.(this, samples);},
         async stop() {this.stopped++; await hooks.stop?.(this);},
         async dispose() {this.disposed++; await hooks.dispose?.(this);},
       }; clients.push(client); return client;
@@ -208,4 +208,40 @@ test('second prepare during live session fails explicitly and disposes all clien
   assert.equal(await f.bridge.prepare(options()),false);
   assert.equal(count(f,'failure'),1);assert.equal(f.clients.length,2);
   assert.ok(f.clients.every(c=>c.disposed===1));
+});
+
+
+test('upstream native backlog reaches each serialized SDK write, not just the one in-flight packet',async()=>{
+  const gate=deferred();const f=fixture({write:client=>client.writes.length===1?gate.promise:undefined});
+  await f.bridge.prepare(options({channels:['call']}));
+  const jobs=Array.from({length:12},(_,i)=>f.bridge.audio('call',pcm(),16000,i));
+  await tick();assert.equal(f.clients[0].writes.length,1);
+  assert.equal(f.clients[0].writes[0].hints.pendingPackets,12);
+  gate.resolve();await Promise.all(jobs);
+  assert.deepEqual(f.clients[0].writes.map(w=>w.hints.pendingPackets),Array.from({length:12},(_,i)=>12-i));
+  await f.bridge.stop();
+});
+
+test('stop bounds a blocked recovery write, cancels clients, reports incomplete tail and permits restart',async()=>{
+  const gate=deferred();let expire,cleared=false;
+  const f=fixture({write:()=>gate.promise,dispose:()=>gate.resolve(),timers:{
+    setTimeout(fn,ms){assert.equal(ms,8000);expire=fn;return 1;},clearTimeout(){cleared=true;},
+  }});
+  await f.bridge.prepare(options({channels:['call']}));
+  const jobs=[f.bridge.audio('call',pcm(),16000,1),f.bridge.audio('call',pcm(),16000,2)];
+  await tick();let done=false;const stopping=f.bridge.stop();stopping.then(()=>done=true);
+  await tick();assert.equal(done,false);assert.equal(f.clients[0].disposed,0);
+  expire();await stopping;assert.equal(done,true);assert.equal(cleared,true);
+  assert.deepEqual(await Promise.all(jobs),[false,false]);assert.equal(count(f,'ack'),0);
+  assert.equal(count(f,'failure'),1);assert.match(f.messages.find(m=>m.type==='failure').message,/tail.*8 seconds.*cancelled/i);
+  assert.equal(count(f,'stopped'),1);assert.equal(f.clients[0].disposed,1);
+  assert.equal(await f.bridge.prepare(options({channels:['call']})),true);await f.bridge.stop();
+});
+
+test('stop flushes both independent channel workers concurrently before disposal',async()=>{
+  const a=deferred(),b=deferred();const f=fixture({stop:client=>client===f.clients[0]?a.promise:b.promise});
+  await f.bridge.prepare(options());const stopping=f.bridge.stop();await tick();
+  assert.deepEqual(f.clients.map(c=>c.stopped),[1,1]);assert.equal(count(f,'stopped'),0);
+  a.resolve();await tick();assert.equal(count(f,'stopped'),0);
+  b.resolve();await stopping;assert.equal(count(f,'stopped'),1);assert.ok(f.clients.every(c=>c.disposed===1));
 });

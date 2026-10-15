@@ -8,6 +8,7 @@ import Combine
     private var origin: URL?
     private var waits: [String: CheckedContinuation<Void, Error>] = [:]
     private var pending: [Int: (AudioChannel, Date)] = [:]
+    private var refinementAudio: [AudioChannel: RefinementPCMWindow] = [:]
     private var nextPacket = 0
     private var waitIDs: [String: UUID] = [:]
     private var watchdog: Timer?
@@ -40,7 +41,7 @@ import Combine
         keepRunning("call", true)
         var prepared = false
         defer { if !prepared { keepRunning("call", false) } }
-        pending.removeAll()
+        pending.removeAll(); refinementAudio.removeAll()
         let count = Double(max(1, channels.count)), machine = ProcessInfo.processInfo
         let budget = max(1, Double(machine.physicalMemory) / 1073741824 - 2) / count
         let profiles = try JSONSerialization.jsonObject(with: JSONEncoder().encode(voiceProfiles))
@@ -58,8 +59,13 @@ import Combine
     }
     func send(_ channel: AudioChannel, data: Data, rate: Double) {
         guard pending.values.filter({ $0.0 == channel }).count < 150 else { onFailure?("Распознавание отстаёт больше чем на 15 секунд. Запись остановлена; готовый текст сохранён."); return }
+        refinementAudio[channel, default: RefinementPCMWindow()].append(data, rate: rate)
         nextPacket += 1; let id = nextPacket; pending[id] = (channel, Date())
         run("void CallBridge.audio('\(channel.rawValue)','\(data.base64EncodedString())',\(rate),\(id))")
+    }
+    func refinementSample(_ channel: AudioChannel, start: Double, end: Double) -> (Data, Double)? {
+        guard let window = refinementAudio[channel], let data = window.slice(start: start, end: end) else { return nil }
+        return (data, window.rate)
     }
     func drain() async throws {
         let deadline = Date().addingTimeInterval(25)
@@ -75,7 +81,7 @@ import Combine
         finish("ready", error: CancellationError())
         do { try await wait("stopped", timeout: 30, cancellable: false) { self.run("void CallBridge.stop()") } }
         catch { onFailure?("Не удалось завершить SDK: \(error.localizedDescription)") }
-        pending.removeAll()
+        pending.removeAll(); refinementAudio.removeAll()
     }
     func enrollVoice(name: String, data: Data? = nil, rate: Double? = nil, segmentKey: String? = nil) async throws {
         let requestID = UUID().uuidString

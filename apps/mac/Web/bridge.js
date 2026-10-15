@@ -2,6 +2,7 @@
 (function (root) {
   'use strict';
   const MAX_PENDING = 150;
+  const STOP_DRAIN_MS = 8000;
   const CHANNELS = new Set(['microphone', 'call']);
   let generation = 0;
   let active = null;
@@ -140,7 +141,7 @@
         root.CallSpeakers?.feed(session.speakers,channel,samples,rate);
         entry.busy=true;
         root.CallSpeakers?.pressure?.(session.speakers,channel,{busy:true,pending:entry.pending});
-        try { await entry.client.write(samples, rate); }
+        try { await entry.client.write(samples, rate, {pendingPackets: entry.pending}); }
         finally { entry.busy=false; root.CallSpeakers?.pressure?.(session.speakers,channel,{busy:false,pending:entry.pending}); }
         if (!current(session)) return false;
         send({type: 'ack', channel, packetId});
@@ -165,14 +166,27 @@
     const job = (async () => {
       try {
         if (!wasPreparing && current(session)) {
-          await Promise.all([...session.entries.values()].map(entry => entry.tail));
+          // Recovery may be loading/replaying a fallback. Do not wait for its
+          // 90-second budget before giving dispose() a chance to cancel it.
+          let drainTimer;
+          try {
+            await Promise.race([
+              Promise.all([...session.entries.values()].map(entry => entry.tail)),
+              new Promise((_, reject) => { drainTimer = setTimeout(() => {
+                const pressure = [...session.entries].map(([channel, entry]) => `${channel}: ${entry.pending} packets, ${entry.client.state || 'unknown'}`).join('; ');
+                reject(Error(`Audio tail did not drain within 8 seconds (${pressure}). Unprocessed audio was cancelled; completed text is preserved.`));
+              }, STOP_DRAIN_MS); }),
+            ]);
+          } finally { clearTimeout(drainTimer); }
           // Keep callbacks live through stop(): it emits the final buffered phrase.
-          for (const [channel, entry] of session.entries) {
-            if (!current(session)) break;
+          // Channels have separate workers. Flush them concurrently so their
+          // individual 15-second model deadlines do not accumulate past the host deadline.
+          await Promise.all([...session.entries].map(async ([channel, entry]) => {
+            if (!current(session)) return;
             entry.busy=true;root.CallSpeakers?.pressure?.(session.speakers,channel,{busy:true,pending:entry.pending});
             try { await entry.client.stop(); }
             finally { entry.busy=false;root.CallSpeakers?.pressure?.(session.speakers,channel,{busy:false,pending:0}); }
-          }
+          }));
         }
       } catch (error) { await fail(session, error); }
       await root.CallSpeakers?.finish(session.speakers);
