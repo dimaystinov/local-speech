@@ -5,6 +5,8 @@ patch releases contain compatible fixes. Tags are immutable release snapshots.
 
 ## Unreleased
 
+- Add an isolated GigaAM/Qwen cascade benchmark with development-only policy selection, conservative patches, paired regression checks and measured results.
+
 - Expose nullable, uncalibrated word confidence metadata in the browser SDK.
 - Add an optional local RU/EN confidence/recheck experiment and paired corpus scorer.
 - Preserve primary transcripts; suggestions remain separate pending WER and latency gates.
