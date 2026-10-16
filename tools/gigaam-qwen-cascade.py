@@ -10,6 +10,7 @@ def module(name):
     spec=importlib.util.spec_from_file_location(name,Path(__file__).with_name(name+'.py'))
     obj=importlib.util.module_from_spec(spec);spec.loader.exec_module(obj);return obj
 pilot=module('ruen-pilot')
+term_review=module('term-review')
 
 def words(text):
     return list(re.finditer(r'[^\W_]+',text,re.UNICODE))
@@ -22,17 +23,23 @@ def suspect(word, threshold):
     return word['score']<threshold or bool(re.search('[a-zA-Z]',word['word']))
 
 def route(draft,policy):
-    return policy['mode']!='off' and (not draft['hypothesis'].strip() or any(suspect(w,policy['threshold']) for w in draft['wordEvidence']))
+    return policy['mode']!='off' and (not draft['hypothesis'].strip() or any(suspect(w,policy['threshold']) for w in draft['wordEvidence']) or bool(term_review.matches(draft['hypothesis'],policy.get('glossary',[]))))
 
 def patch(draft,candidate,policy):
     original=draft['hypothesis'];aa=words(original);bb=words(candidate)
     ev=draft['wordEvidence']
     if len(ev)!=len(aa) or [w['word'] for w in ev]!=[w.group() for w in aa]:raise ValueError('Evidence not aligned')
     matcher=difflib.SequenceMatcher(None,pilot.normalized(original),pilot.normalized(candidate),autojunk=False)
-    edits=[]
+    edits=term_review.confirmed_edits(original,candidate,policy.get('glossary',[]))
     for tag,i,j,k,l in matcher.get_opcodes():
         # Insertions/deletions and long rewrites are intentionally not applied.
-        if tag!='replace' or max(j-i,l-k)>3:continue
+        if tag!='replace' or max(j-i,l-k)>4:continue
+        if any(aa[i].start()<end and aa[j-1].end()>start for start,end,_ in edits):continue
+        replacement=candidate[bb[k].start():bb[l-1].end()]
+        source=original[aa[i].start():aa[j-1].end()]
+        if term_review.confirms(source,replacement,policy.get('glossary',[])):
+            edits.append((aa[i].start(),aa[j-1].end(),replacement));continue
+        if max(j-i,l-k)>3:continue
         if not any(suspect(w,policy['threshold']) for w in ev[i:j]):continue
         replacement=candidate[bb[k].start():bb[l-1].end()]
         if policy['mode']=='terms' and not re.search('[a-zA-Z]',replacement):continue
@@ -40,7 +47,7 @@ def patch(draft,candidate,policy):
         if any(not suspect(w,policy['threshold']) for w in ev[i:j]):continue
         edits.append((aa[i].start(),aa[j-1].end(),replacement))
     if len(edits)>3:return original
-    for start,end,text in reversed(edits):original=original[:start]+text+original[end:]
+    for start,end,text in sorted(edits,reverse=True):original=original[:start]+text+original[end:]
     return original
 
 def metrics(rows):
