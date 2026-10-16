@@ -11,6 +11,7 @@ def module(name):
     obj=importlib.util.module_from_spec(spec);spec.loader.exec_module(obj);return obj
 pilot=module('ruen-pilot')
 term_review=module('term-review')
+foreign_review=module('foreign-word-review')
 
 def words(text):
     return list(re.finditer(r'[^\W_]+',text,re.UNICODE))
@@ -23,7 +24,7 @@ def suspect(word, threshold):
     return word['score']<threshold or bool(re.search('[a-zA-Z]',word['word']))
 
 def route(draft,policy):
-    return policy['mode']!='off' and (not draft['hypothesis'].strip() or any(suspect(w,policy['threshold']) for w in draft['wordEvidence']) or bool(term_review.matches(draft['hypothesis'],policy.get('glossary',[]))))
+    return policy['mode']!='off' and (not draft['hypothesis'].strip() or any(suspect(w,policy['threshold']) for w in draft['wordEvidence']) or bool(term_review.matches(draft['hypothesis'],policy.get('glossary',[]))) or (policy.get('foreignReview',False) and 0<len(foreign_review.indices(draft['hypothesis']))<=policy.get('maxForeignWords',4)))
 
 def patch(draft,candidate,policy):
     original=draft['hypothesis'];aa=words(original);bb=words(candidate)
@@ -44,6 +45,10 @@ def patch(draft,candidate,policy):
         if any(not suspect(w,policy['threshold']) for w in ev[i:j]):continue
         edits.append((aa[i].start(),aa[j-1].end(),replacement))
     if len(edits)>3:return original
+    if policy.get('foreignReview',False):
+        for edit in foreign_review.confirmed_edits(original,candidate,policy.get('phoneticThreshold',.65)):
+            if len(edits)>=3:break
+            if not any(edit[0]<end and edit[1]>start for start,end,_ in edits):edits.append(edit)
     for start,end,text in sorted(edits,reverse=True):original=original[:start]+text+original[end:]
     return original
 
@@ -73,20 +78,20 @@ def worker(a):
         core=GigaAMModel.from_pretrained(str(a.model),local_files_only=True,weights_only=True).eval().model
         if not core.decoding.tokenizer.charwise:raise ValueError('Character tokenizer required')
         for layer in core.encoder.layers:layer.self_attn.torch_sdpa_attn=False
-        core.encoder.to('mps');core.head.to('mps')
+        device,device_check=module('gigaam-device-check').prepare(core)
         @torch.inference_mode()
         def infer(audio):
             features,lens=core.preprocessor(torch.from_numpy(audio).unsqueeze(0),torch.tensor([len(audio)]))
-            encoded,lens=core.encoder(features.to('mps'),lens.to('mps'))
+            encoded,lens=core.encoder(features.to(device),lens.to(device))
             values,labels=core.head(encoder_output=encoded)[0,:int(lens[0])].max(-1)
             labels=labels.cpu().tolist();probs=values.exp().cpu().tolist();chars=[];scores=[];last=None
             for token,p in zip(labels,probs):
                 if token!=last and token!=core.decoding.blank_id:
                     chars.append(core.decoding.tokenizer.id_to_str(token));scores.append(p)
                 last=token
-            torch.mps.synchronize()
-            return dict(hypothesis=''.join(chars),wordEvidence=evidence(chars,scores))
-        def memory():return dict(allocatedBytes=torch.mps.current_allocated_memory(),driverBytes=torch.mps.driver_allocated_memory())
+            if device=='mps':torch.mps.synchronize()
+            return dict(hypothesis=''.join(chars),wordEvidence=evidence(chars,scores),device=device,deviceCheck=device_check)
+        def memory():return dict(allocatedBytes=torch.mps.current_allocated_memory(),driverBytes=torch.mps.driver_allocated_memory()) if device=='mps' else dict(allocatedBytes=None,driverBytes=None)
     else:
         import mlx.core as mx
         from mlx_audio.stt import load

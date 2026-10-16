@@ -1,0 +1,4 @@
+# Optional CPU-only morphology experiment; eSpeak NG must be installed separately.
+pymorphy3==2.0.6
+pymorphy3-dicts-ru==2.4.417150.4580142
+dawg2-python==0.9.0

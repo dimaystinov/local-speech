@@ -1,5 +1,8 @@
 # Context glossary acoustic review: measured experiment
 
+Follow-up: [unknown-word phonetic review and repeatability checks](foreign-review-20261016.md)
+tests confident Cyrillic English words beyond this fixed glossary.
+
 A high CTC emission score does not rule out Cyrillic spellings of English terms.
 `tools/term-review.py` uses a caller-supplied glossary (maximum 64 terms, eight
 pronunciations per term) to request independent Qwen recognition. The glossary is

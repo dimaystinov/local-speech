@@ -17,13 +17,13 @@ def download(url):
 def main():
  import numpy as np,soundfile as sf
  from scipy.signal import resample_poly
- p=argparse.ArgumentParser(description=__doc__);p.add_argument('--output',type=Path,required=True);p.add_argument('--metadata',type=Path);p.add_argument('--count',type=int,default=48);a=p.parse_args()
- if not 1<=a.count<=100:raise ValueError('count must be 1..100')
+ p=argparse.ArgumentParser(description=__doc__);p.add_argument('--output',type=Path,required=True);p.add_argument('--metadata',type=Path);p.add_argument('--offset',type=int,default=0);p.add_argument('--count',type=int,default=48);a=p.parse_args()
+ if a.offset<0 or not 1<=a.count<=100:raise ValueError('count must be 1..100')
  root=a.output.resolve();root.mkdir(parents=True,exist_ok=True)
  if (root/'corpus.json').exists():raise ValueError('Frozen corpus already exists')
- url='https://datasets-server.huggingface.co/rows?dataset=YapayNet%2Fcs-fleurs-tagged&config=default&split=test&offset=0&length=100'
+ url=f'https://datasets-server.huggingface.co/rows?dataset=YapayNet%2Fcs-fleurs-tagged&config=default&split=test&offset={a.offset}&length=100'
  raw=a.metadata.read_bytes() if a.metadata else download(url);(root/'rows-snapshot.json').write_bytes(raw)
- rows=[x['row'] for x in json.loads(raw)['rows']][:a.count]
+ rows=[x['row'] for x in json.loads(raw)['rows'] if a.offset<=x['row_idx']<a.offset+a.count]
  if len(rows)!=a.count or any(r['language_pair']!='rus-eng' for r in rows):raise ValueError('Unexpected source rows')
  def fetch(r):
   if not __import__('re').fullmatch(r'[A-Za-z0-9_-]+',r['id']):raise ValueError('Invalid source ID')
