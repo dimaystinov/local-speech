@@ -96,3 +96,14 @@ The optional `speaker.segment(samples, sampleRate)` API lazily loads pinned pyan
 ## Versions and updates
 
 See [release and update instructions](../docs/releases.md). `LocalSpeech.version` and `diagnostics().version` report the built SDK version.
+
+## Word confidence (unreleased)
+
+Final events include `wordConfidence`: one entry per textual word. Scores are
+uncalibrated model probabilities, not accuracy or language probabilities. A backend
+without aligned word evidence returns null scores (including the current sherpa
+Whisper build). `LocalSpeech.assessWords(text, evidence)` also validates externally
+supplied aligned `{word, probability}` evidence. This adds no model or decode.
+See [mixed-language confidence](../docs/mixed-language-confidence.md) for the
+optional Mac experiment, which stores suggestions separately and is not enabled
+by an SDK download.

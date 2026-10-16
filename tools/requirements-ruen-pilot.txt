@@ -1,0 +1,6 @@
+torch==2.8.0
+transformers==4.57.1
+faster-whisper==1.2.1
+ctranslate2==4.6.0
+soundfile==0.13.1
+librosa==0.11.0

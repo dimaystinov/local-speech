@@ -7,6 +7,7 @@ import UniformTypeIdentifiers
     let sdk = SDKHost()
     private let capture = MacCallCapture()
     private let nativeRefinement = NativeRefinement()
+    private let wordRefinement = WordConfidenceRefinement()
     private let archive = TranscriptArchive()
     private let voiceStore = VoiceProfileStore()
     private var packetizer: AudioPacketizer?
@@ -120,7 +121,18 @@ import UniformTypeIdentifiers
                 document.append(channel: channel, session: session, segment: segment, seconds: sessionOffset + start, text: text)
                 let end = (event["endMs"] as? Double).flatMap { $0.isFinite && $0 >= 0 ? $0 / 1000 : nil } ?? start
                 document.durationSeconds = max(document.durationSeconds ?? 0, sessionOffset + end); save()
-                if event["backend"] as? String == "whisper", RefinementPolicy.eligible(text),
+                if ["mixed", "auto"].contains(language), !normalizedTerms.isEmpty,
+                   let (audio, rate) = sdk.refinementSample(channel, start: start, end: end) {
+                    let documentID = document.id, terms = normalizedTerms
+                    let lineID = channel.rawValue + ":" + session + ":" + String(segment)
+                    Task { [weak self] in
+                        guard let self, self.sdk.outstanding <= 2, self.document.id == documentID,
+                              let review = await self.wordRefinement.review(audio: audio, rate: rate, original: text, terms: terms),
+                              self.document.id == documentID else { return }
+                        if self.document.attachWordReview(id: lineID, review: review) { self.save() }
+                    }
+                }
+                if !["mixed", "auto"].contains(language), event["backend"] as? String == "whisper", RefinementPolicy.eligible(text),
                    let (audio, rate) = sdk.refinementSample(channel, start: start, end: end) {
                     let documentID = document.id
                     let lineID = channel.rawValue + ":" + session + ":" + String(segment)

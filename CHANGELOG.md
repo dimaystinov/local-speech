@@ -3,6 +3,13 @@
 Versions follow Semantic Versioning. Before 1.0, minor releases may change the API;
 patch releases contain compatible fixes. Tags are immutable release snapshots.
 
+## Unreleased
+
+- Expose nullable, uncalibrated word confidence metadata in the browser SDK.
+- Add an optional local RU/EN confidence/recheck experiment and paired corpus scorer.
+- Preserve primary transcripts; suggestions remain separate pending WER and latency gates.
+- Prevent Russian-only native refinement from modifying mixed/auto sessions.
+
 ## 0.2.0 — 2026-10-15
 
 - Add SDK versioned GitHub installation and runtime-only distribution with SHA-256 inventory.

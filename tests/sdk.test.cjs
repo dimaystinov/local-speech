@@ -106,3 +106,11 @@ test('actual bridge timeout interrupts SDK fallback preparation and stops withou
  assert.equal(messages.filter(m=>m.type==='stopped').length,1);assert.equal(messages.some(m=>m.type==='ack'),false);
  assert.equal(await h.ctx.CallBridge.prepare(options),true);await h.ctx.CallBridge.stop();
 });
+test('word confidence preserves unknowns and does not invent language probabilities',()=>{
+ const h=harness();const assess=h.ctx.LocalSpeech.assessWords;
+ assert.equal(typeof assess,'function');
+ const a=assess('Привет Docker',[{word:'Привет',probability:.91},{word:'Docker',probability:.42}]);
+ assert.equal(a[0].probability,.91);assert.equal(a[1].probability,.42);assert.equal(a[1].languageProbability,null);
+ assert.equal(assess('Привет Docker',[{word:'другое',probability:.99}])[0].probability,null);
+ assert.equal(assess('Привет',[{word:'Привет',probability:NaN}])[0].probability,null);
+});

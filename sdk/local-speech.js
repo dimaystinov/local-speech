@@ -3,6 +3,13 @@
   'use strict';
   const {selectRecognitionPlan,selectRecognitionFallback}=root.SpeechRecognitionPolicy;
   const scriptBase=typeof document!=='undefined'&&document.currentScript?.src?new URL('.',document.currentScript.src).href:null;
+  // Backend scores are uncalibrated and must align with the exact transcript.
+  function assessWords(text, evidence=[]) {
+    const words=String(text).match(/[\p{L}\p{N}_]+(?:[-'][\p{L}\p{N}_]+)*/gu)||[];
+    const normalize=s=>String(s).toLowerCase().replace(/ё/g,'е');
+    const matched=Array.isArray(evidence)&&evidence.length===words.length&&evidence.every((w,i)=>w&&normalize(String(w.word).trim().replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu,''))===normalize(words[i]));
+    return words.map((word,i)=>{const p=matched?evidence[i].probability:null;return {word,probability:typeof p==='number'&&Number.isFinite(p)&&p>=0&&p<=1?p:null,calibrated:false,languageProbability:null};});
+  }
   class SpeechClient {
     constructor(options={}){
       const base=options.assetBaseURL||scriptBase;
@@ -107,6 +114,7 @@
       const timingReliable=this.candidate?.engine==='local'&&Number.isFinite(data.endMs),backend=this.candidate?.key;
       const event={...data,backend,sessionId:this.sessionId,rawText:data.text||'',text:data.text||'',turnComplete:false,timingReliable};
       if(data.type==='final'){
+        event.wordConfidence=assessWords(event.text,data.words);
         this.finalized.add(key);if(event.text){if(timingReliable)this.buffer.commit(data.endMs);else this.nativeOverlapMs=this.buffer.endMs;}
         event.replayPossibleOverlap=timingReliable&&this.nativeOverlapMs>0&&(!Number.isFinite(data.startMs)||data.startMs<this.nativeOverlapMs);
         event.quality=assessQuality({text:event.text,durationMs:(data.endMs||0)-(data.startMs||0),voicedMs:data.voicedMs||0,clippedRatio:data.clippedRatio||0});
@@ -154,5 +162,5 @@
     diagnostics(){return {version:'__LOCAL_SPEECH_VERSION__',state:this.state,sessionId:this.sessionId||null,backend:this.candidate?.key||null,plan:this.plan,load:this.loadStats||null,bufferedMs:this.buffer.endMs-this.buffer.committedMs,lostMs:this.buffer.lostMs};}
     exportPendingAudio(){return this.buffer.snapshot();}
   }
-  root.LocalSpeech=Object.freeze({version:'__LOCAL_SPEECH_VERSION__',create:options=>new SpeechClient(options)});
+  root.LocalSpeech=Object.freeze({version:'__LOCAL_SPEECH_VERSION__',assessWords,create:options=>new SpeechClient(options)});
 })(globalThis);

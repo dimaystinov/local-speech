@@ -1,6 +1,6 @@
 export type SpeechLanguage = 'ru' | 'ru-RU' | 'en' | 'en-US' | 'en-GB' | 'mixed' | 'auto';
 export interface SpeechOptions { assetBaseURL?: string; language?: SpeechLanguage; allowLargeModels?: boolean; cacheOnly?: boolean; terms?: string[]; pauseSeconds?: number; maxSegmentSeconds?: number; deviceHints?: {cores?:number|null;memoryGB?:number|null;mobile?:boolean;saveData?:boolean}; }
-export interface SpeechEvent { type: string; schemaVersion: 1; sessionId?: string; segmentId?: number; text?: string; rawText?: string; turnComplete?: false; backend?: string; state?: string; message?: string; code?: string; quality?: {accuracy: null; status: string; flags: string[]}; [key: string]: unknown; }
+export interface SpeechEvent { type: string; schemaVersion: 1; sessionId?: string; segmentId?: number; text?: string; rawText?: string; turnComplete?: false; backend?: string; state?: string; message?: string; code?: string; wordConfidence?: WordConfidence[]; quality?: {accuracy: null; status: string; flags: string[]}; [key: string]: unknown; }
 export interface SpeechClient {
  readonly state: string;
  on(type: string, listener: (event: SpeechEvent) => void): () => void;
@@ -14,3 +14,6 @@ export interface SpeechClient {
 }
 export declare const version: string;
 export declare function create(options?: SpeechOptions): SpeechClient;
+
+export interface WordConfidence { word:string; probability:number|null; calibrated:false; languageProbability:null; }
+export declare function assessWords(text:string, evidence?:Array<{word:string;probability:number|null}>):WordConfidence[];

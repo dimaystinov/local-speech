@@ -7,6 +7,7 @@ swift build -c release --package-path apps/mac
 app_path="$PWD/apps/mac/dist/LocalSpeech Calls.app"
 mkdir -p "$app_path/Contents/MacOS" "$app_path/Contents/Resources/Web"
 cp apps/mac/.build/release/CallScribe "$app_path/Contents/MacOS/CallScribe"
+cp tools/word-confidence.py "$app_path/Contents/Resources/"
 cp apps/mac/Assets/roki-assistant.png "$app_path/Contents/Resources/"
 mkdir -p "$app_path/Contents/Resources/RokiVoice"
 cp apps/mac/Assets/RokiVoice/profile.json apps/mac/Assets/RokiVoice/reference.wav apps/mac/Assets/RokiVoice/synthesize.py apps/mac/Assets/RokiVoice/stream.py "$app_path/Contents/Resources/RokiVoice/"

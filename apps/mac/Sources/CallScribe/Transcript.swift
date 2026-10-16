@@ -10,6 +10,7 @@ struct TranscriptLine: Identifiable, Codable, Equatable {
     let seconds: Double
     var text: String
     var originalText: String?
+    var wordReview: WordConfidenceReview?
     var speaker: VoiceAttribution?
     var speakerLabel: String { speaker.map { channel.title + " · " + $0.displayLabel } ?? channel.title }
 }
@@ -33,9 +34,16 @@ struct TranscriptDocument: Codable {
         lines[index].originalText = original; lines[index].text = candidate
         return true
     }
+    @discardableResult mutating func attachWordReview(id: String, review: WordConfidenceReview) -> Bool {
+        guard review.valid, let index = lines.firstIndex(where: { $0.id == id }),
+              lines[index].text == review.original, lines[index].speaker?.kind != "overlap" else { return false }
+        lines[index].wordReview = review
+        return true
+    }
     mutating func attribute(id: String, speaker: VoiceAttribution) {
         guard let index = lines.firstIndex(where: { $0.id == id }) else { return }
         lines[index].speaker = speaker
+        if speaker.kind == "overlap" { lines[index].wordReview = nil }
         if speaker.kind == "overlap", let original = lines[index].originalText {
             lines[index].text = original; lines[index].originalText = nil
         }
