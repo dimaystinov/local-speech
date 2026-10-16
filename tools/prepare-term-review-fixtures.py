@@ -39,19 +39,21 @@ RUSSIAN=[
  'Сегодня обсуждаем расписание, а не программу.'
 ]
 def main():
- p=argparse.ArgumentParser();p.add_argument('--output',type=Path,required=True);a=p.parse_args();root=a.output.resolve();root.mkdir(parents=True,exist_ok=True)
+ p=argparse.ArgumentParser();p.add_argument('--output',type=Path,required=True);p.add_argument('--script',type=Path);a=p.parse_args();root=a.output.resolve();root.mkdir(parents=True,exist_ok=True)
  if (root/'corpus.json').exists():raise ValueError('Frozen fixtures already exist')
  cases=[];rng=np.random.default_rng(20261016)
- for i,text in enumerate(MIXED+RUSSIAN):
+ entries=json.loads(a.script.read_text()) if a.script else [dict(spoken=t,reference=t,language='mixed' if i<len(MIXED) else 'ru') for i,t in enumerate(MIXED+RUSSIAN)]
+ for i,entry in enumerate(entries):
+  text=entry['spoken'];reference=entry['reference'];language=entry['language']
   name=f'term-fixture-{i:02d}';aiff=root/(name+'.aiff');wav=root/(name+'.wav')
   subprocess.run(['say','-v','Milena','-r','175','-o',str(aiff),text],check=True)
   subprocess.run(['afconvert','-f','WAVE','-d','LEI16@16000','-c','1',str(aiff),str(wav)],check=True)
   with wave.open(str(wav)) as f:audio=np.frombuffer(f.readframes(f.getnframes()),dtype='<i2').astype(np.float32)/32768
-  for condition in (['clean','noise15db'] if i<len(MIXED) else ['clean']):
+  for condition in (['clean','noise15db'] if language=='mixed' else ['clean']):
    path=wav
    if condition!='clean':
     noise=rng.standard_normal(len(audio));noise*=np.sqrt(np.mean(audio**2)/10**1.5)/np.sqrt(np.mean(noise**2));x=np.clip(audio+noise,-1,.9999);path=root/(name+'-'+condition+'.wav')
     with wave.open(str(path),'wb') as f:f.setnchannels(1);f.setsampwidth(2);f.setframerate(16000);f.writeframes((x*32767).astype('<i2').tobytes())
-   cases.append(dict(id=name+'-'+condition,file=str(path),sha256=hashlib.sha256(path.read_bytes()).hexdigest(),reference=text,terms=__import__('re').findall('[A-Za-z]+',text),language='mixed' if i<len(MIXED) else 'ru',variant='synthetic-'+condition,group=name,split='holdout',durationSeconds=len(audio)/16000))
+   cases.append(dict(id=name+'-'+condition,file=str(path),sha256=hashlib.sha256(path.read_bytes()).hexdigest(),reference=reference,spoken=text,terms=__import__('re').findall('[A-Za-z]+',reference),language=language,variant='synthetic-'+condition,group=name,split='holdout',durationSeconds=len(audio)/16000))
  (root/'corpus.json').write_text(json.dumps(dict(cases=cases,synthetic=True,seed=20261016,limitation='macOS Milena, shared voice; noise is paired, not independent human evidence'),ensure_ascii=False,indent=2));print('fixtures',len(cases))
 if __name__=='__main__':main()

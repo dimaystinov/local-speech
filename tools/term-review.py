@@ -67,3 +67,10 @@ Qwen tokens (e.g. Git Hub -> GitHub), but never from Qwen Cyrillic alone.
         entry=next(e for e in entries if tuple(tokens(e['term']))==canonical)
         edits.append((aa[start].start(),aa[end-1].end(),entry['term']))
     return edits
+
+def canonical_latin(text,entries):
+    """Normalize only an already-Latin acoustic hypothesis, never translate."""
+    compile_glossary(entries)
+    if not re.fullmatch(r'[A-Za-z0-9 .+#-]+',text):return text
+    key=''.join(tokens(text));choices={e['term'] for e in entries if ''.join(tokens(e['term']))==key}
+    return next(iter(choices)) if len(choices)==1 else text

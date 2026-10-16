@@ -35,13 +35,10 @@ def patch(draft,candidate,policy):
         # Insertions/deletions and long rewrites are intentionally not applied.
         if tag!='replace' or max(j-i,l-k)>4:continue
         if any(aa[i].start()<end and aa[j-1].end()>start for start,end,_ in edits):continue
-        replacement=candidate[bb[k].start():bb[l-1].end()]
-        source=original[aa[i].start():aa[j-1].end()]
-        if term_review.confirms(source,replacement,policy.get('glossary',[])):
-            edits.append((aa[i].start(),aa[j-1].end(),replacement));continue
+        replacement=term_review.canonical_latin(candidate[bb[k].start():bb[l-1].end()],policy.get('glossary',[]))
         if max(j-i,l-k)>3:continue
         if not any(suspect(w,policy['threshold']) for w in ev[i:j]):continue
-        replacement=candidate[bb[k].start():bb[l-1].end()]
+        replacement=term_review.canonical_latin(candidate[bb[k].start():bb[l-1].end()],policy.get('glossary',[]))
         if policy['mode']=='terms' and not re.search('[a-zA-Z]',replacement):continue
         # Do not change confident neighbouring Russian words in a larger block.
         if any(not suspect(w,policy['threshold']) for w in ev[i:j]):continue

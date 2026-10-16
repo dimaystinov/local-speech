@@ -17,6 +17,14 @@ class Terms(unittest.TestCase):
   self.assertEqual(c.patch(draft('проверь докер'),'удали Docker',POLICY),'проверь докер')
  def test_multiword_alias(self):self.assertEqual(c.patch(draft('это гит хаб'),'это GitHub',POLICY),'это GitHub')
  def test_substring_does_not_trigger(self):self.assertFalse(c.route(draft('питоновый редиска'),POLICY))
+ def test_term_inside_neighbor_rewrite(self):
+  self.assertEqual(c.patch(draft('добавь тайп скрипт в проект'),'Добавив TypeScript в проект',POLICY),'добавь TypeScript в проект')
+ def test_latin_spacing_only(self):
+  self.assertEqual(c.term_review.canonical_latin('Git Hub',POLICY['glossary']),'GitHub')
+  self.assertEqual(c.term_review.canonical_latin('гит хаб',POLICY['glossary']),'гит хаб')
+ def test_repeat_ambiguity(self):
+  self.assertEqual(c.term_review.confirmed_edits('докер и докер','Docker и Docker',POLICY['glossary']),[])
+  self.assertEqual(c.patch(draft('докер и докер'),'Docker и Docker',POLICY),'докер и докер')
  def test_ambiguous_alias(self):
   with self.assertRaises(ValueError):c.term_review.compile_glossary([dict(term='A',aliases=['тест']),dict(term='B',aliases=['тест'])])
  def test_bounded_glossary(self):
