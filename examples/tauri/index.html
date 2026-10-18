@@ -1,0 +1,9 @@
+<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>LocalSpeech — проверка SDK</title>
+<style>body{font:18px system-ui;max-width:900px;margin:40px auto;padding:20px;background:#f5f7fb;color:#182337}button,select{font:inherit;padding:12px;margin:4px}textarea{box-sizing:border-box;width:100%;height:300px;font:inherit;padding:16px}#status{min-height:2em}#partial{min-height:2em;color:#596379}</style>
+<h1>LocalSpeech</h1><p>Локальное распознавание и озвучка. Текст можно редактировать и копировать.</p>
+<select id="language"><option value="mixed">Русский + English</option><option value="ru">Русский</option><option value="en">English</option></select>
+<button id="start" disabled>Начать</button><button id="stop" disabled>Остановить</button><button id="copy">Копировать</button>
+<p id="status">Загрузка SDK…</p><div id="partial" aria-live="polite"></div><textarea id="text" aria-label="Расшифровка"></textarea>
+<button id="speak" disabled>Прочитать текст</button><button id="silence" disabled>Прервать озвучку</button>
+<p>Озвучка: установленный локальный голос системы. Qwen подключается отдельным провайдером.</p>
+<script type="module" src="/main.js"></script></html>

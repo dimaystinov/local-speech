@@ -24,6 +24,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: npm test
+      - run: python3 -m pip install torch==2.10.0 --index-url https://download.pytorch.org/whl/cpu
       - run: python3 -m unittest discover -s tests -p 'test_*.py'
       - run: npm run prepare && npm run release:check
       - run: npm pack --ignore-scripts

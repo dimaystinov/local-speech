@@ -1,0 +1,1 @@
+{"identifier":"main","description":"Local SDK demo window; no filesystem or shell access","windows":["main"],"permissions":["core:default"]}

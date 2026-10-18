@@ -8,7 +8,7 @@
 Requires Node.js 22+ for installation. Recognition still runs in the browser.
 
 ```sh
-npm install --save-exact github:dimaystinov/local-speech#v0.2.0
+npm install --save-exact github:dimaystinov/local-speech#v0.3.0
 ```
 
 Commit the host application's package-lock.json. For an update, replace the tag with
@@ -18,7 +18,7 @@ upgrade while the SDK is pre-1.0. `npm update` does not automatically advance pi
 
 Git installation prepares a runtime-only SDK without downloading weights. Copy the
 **entire** `node_modules/local-speech-sdk/dist/local-speech/` directory into a new
-versioned directory on your application origin, for example `/speech/0.2.0/`.
+versioned directory on your application origin, for example `/speech/0.3.0/`.
 Point script URLs and `assetBaseURL` to that directory. Do not bundle only the JS file:
 workers, WASM and manifests must remain together. This is a browser SDK, not a Node ASR API.
 

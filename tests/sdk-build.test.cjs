@@ -8,6 +8,7 @@ function fixture(t){
   for(const file of ['system-recognizer.js','capture.js','resilience.js','device-policy.js','recognition-policy.js','local-engine.js','sdk/local-speech.js','worker.js','pcm-worklet.js','signal.js','context.js','vendor/sherpa-onnx-wasm-web.js','vendor/sherpa-onnx-asr.js','vendor/sherpa-onnx-vad.js'])write(file,'/* fixture */');
   write('model-catalog.js',"const SPEECH_MODELS={small:{files:['encoder.onnx','tokens.txt']},whisper_tiny:{files:['tiny.onnx','tokens.txt']}};");
   write('vendor/sherpa-onnx-wasm-web.wasm','wasm fixture');write('vendor/LICENSE-sherpa-onnx','runtime notice');write('sdk/README.md','# Fixture SDK');write('sdk/local-speech.mjs','export const LocalSpeech = {};');write('sdk/local-speech.d.ts','export declare const LocalSpeech: object;');write('sdk/THIRD_PARTY_NOTICES.md','all verified notices fixture');for(const name of ['whisper','silero-vad','onnxruntime'])write('sdk/licenses/'+name+'.txt','MIT fixture '+name);
+  write('sdk/voice.mjs','export const createVoice = () => {};');write('sdk/voice.d.ts','export declare function createVoice(): unknown;');
   const entries=[];
   for(const [model,names] of Object.entries({small:['encoder.onnx','tokens.txt'],whisper_tiny:['tiny.onnx','tokens.txt'],vad:['silero_vad.onnx'],context:['ru-bpe.vocab']}))for(const file of names){const bytes=Buffer.from(model+'/'+file);write(`models/${model}/${file}`,bytes);entries.push({model,file,bytes:bytes.length,sha256:digest(bytes)});}
   write('models/small/LICENSE','model notice');
@@ -84,4 +85,14 @@ test('runtime-only distribution needs no weights and uses the package version',t
  const ctx={};require('node:vm').runInNewContext(fs.readFileSync(path.join(f.out,'local-speech.js'),'utf8'),ctx);
  assert.equal(ctx.LocalSpeech.version,manifest.version);
  assert.ok(JSON.parse(fs.readFileSync(path.join(f.out,'evidence/model-manifest.json'))).length>0);
+});
+
+test('real runtime ESM entry imports independently of CommonJS globals',t=>{
+  const {execFileSync}=require('node:child_process');
+  const {pathToFileURL}=require('node:url');
+  const temp=fs.mkdtempSync(path.join(os.tmpdir(),'localspeech-esm-'));t.after(()=>fs.rmSync(temp,{recursive:true,force:true}));
+  const out=path.join(temp,'runtime');buildSDK({outputRoot:out,runtimeOnly:true});
+  const entry=pathToFileURL(path.join(out,'local-speech.mjs')).href;
+  const voice=pathToFileURL(path.join(out,'voice.mjs')).href;
+  execFileSync(process.execPath,['--input-type=module','-e',`import {create,version} from ${JSON.stringify(entry)}; import {createVoice} from ${JSON.stringify(voice)}; if(typeof create!=='function'||typeof createVoice!=='function'||!version)throw Error('Invalid ESM exports');`]);
 });

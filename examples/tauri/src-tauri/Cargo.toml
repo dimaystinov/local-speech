@@ -1,0 +1,9 @@
+[package]
+name = "local-speech-example"
+version = "0.3.0"
+edition = "2021"
+rust-version = "1.90"
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+[dependencies]
+tauri = { version = "2", features = [] }

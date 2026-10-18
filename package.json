@@ -1,6 +1,6 @@
 {
   "name": "local-speech-sdk",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Self-hosted, local browser speech recognition SDK",
   "repository": {
     "type": "git",
@@ -16,7 +16,21 @@
     "evidence/model-manifest.json",
     "assets/",
     "docs/releases.md",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "docs/integration.md",
+    "examples/tauri/*.json",
+    "examples/tauri/*.js",
+    "examples/tauri/*.mjs",
+    "examples/tauri/*.html",
+    "examples/tauri/src-tauri/*.toml",
+    "examples/tauri/src-tauri/*.rs",
+    "examples/tauri/src-tauri/*.json",
+    "examples/tauri/src-tauri/*.plist",
+    "examples/tauri/src-tauri/Cargo.lock",
+    "examples/tauri/src-tauri/src/",
+    "examples/tauri/src-tauri/capabilities/",
+    "examples/tauri/src-tauri/icons/",
+    "examples/tauri/README.md"
   ],
   "engines": {
     "node": ">=22"
@@ -26,5 +40,16 @@
     "build": "node tools/build-sdk.cjs",
     "prepare": "node tools/build-sdk.cjs --runtime-only",
     "release:check": "node tools/check-release.cjs"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/local-speech/local-speech.d.ts",
+      "import": "./dist/local-speech/local-speech.mjs"
+    },
+    "./voice": {
+      "types": "./dist/local-speech/voice.d.ts",
+      "import": "./dist/local-speech/voice.mjs"
+    },
+    "./package.json": "./package.json"
   }
 }

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.0 — 2026-10-18
+
+- Add opt-in local system TTS and custom/Tauri voice provider API with cancellation.
+- Include a macOS native TTS adapter for WebViews without local Web Speech voices.
+- Add a Tauri 2 / browser integration demo, versioned resource copying and integration guide.
+- Export typed ESM speech and voice entry points; keep model downloads separate.
+- Experimental GigaAM/Qwen review remains outside the default browser runtime.
+
+
 Versions follow Semantic Versioning. Before 1.0, minor releases may change the API;
 patch releases contain compatible fixes. Tags are immutable release snapshots.
 

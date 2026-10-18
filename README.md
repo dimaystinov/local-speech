@@ -2,9 +2,13 @@
 
 Self-hostable browser speech recognition SDK. Audio is decoded on the user's device, with continuous microphone capture, partial/final events, conservative language/resource selection, cached model weights and bounded recovery. This is an integration candidate, not a guarantee of error-free transcription or certified mobile support.
 
+## Web / Tauri SDK and speech synthesis
+
+See the [complete integration guide (Russian)](docs/integration.md) for installing the versioned library, deploying models, the ready-to-run Tauri 2/browser demo, local TTS, Qwen provider integration and safe upgrades/rollback. SDK 0.3.0 adds `local-speech-sdk/voice`; Qwen is a separate host runtime, not bundled.
+
 ## Quick start
 
-Requires Python 3.10+ and Node.js 20+. No npm dependencies are needed for this SDK.
+Requires Python 3.10+ and Node.js 22+. No npm dependencies are needed for this SDK.
 
 ```sh
 python3 tools/download-models.py
@@ -43,7 +47,7 @@ The [native Mac test application](apps/mac/README.md) captures call audio and mi
 - Russian: streaming Zipformer INT8, about 29 MB of weights.
 - Whisper tiny/base: about 104/161 MB of weights, windowed recognition. Partial text is not guaranteed at subsecond latency.
 - Context hints are conditional for system/Zipformer adapters. The current Whisper adapter does not apply supplied terms.
-- Other languages are not yet validated by the selection policy. Diarization and enrolled-speaker filtering are not implemented.
+- Other languages are not yet validated by the selection policy. Speaker embeddings/diarization are optional add-ons; see [SDK documentation](sdk/README.md).
 - Cache-only is a model-loading policy, not proof that the whole host application works offline. Browsers can evict storage.
 - A final segment does not mean a conversational turn is complete. Preserve raw text, check names/numbers/negations, and handle uncertainty explicitly.
 

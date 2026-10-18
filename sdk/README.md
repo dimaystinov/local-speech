@@ -1,5 +1,7 @@
 # LocalSpeech browser SDK — integration candidate
 
+[Web/Tauri setup, local TTS and updates (Russian)](../docs/integration.md). Voice is a separate ESM entry `local-speech-sdk/voice`; ASR API remains unchanged.
+
 Headless continuous local recognition for an existing web application. Models and runtime are self-hosted, audio is processed on the client. This is a browser integration candidate, not a claim of paid-ASR parity or certified phone support. Native iOS is a separate deferred adapter.
 
 Build from the project root:

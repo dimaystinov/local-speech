@@ -23,3 +23,6 @@ validation/
 # Original synthetic Roki voice fixture (not a user recording).
 !apps/mac/Assets/RokiVoice/reference.wav
 *.tgz
+examples/tauri/public/
+examples/tauri/src-tauri/target/
+examples/tauri/src-tauri/gen/
